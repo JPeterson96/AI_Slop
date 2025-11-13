@@ -225,6 +225,25 @@
         const responseContent = document.getElementById('responseContent');
         const promptPreview = document.getElementById('promptPreview');
         
+        // Status messages to cycle through
+        const statusMessages = [
+            'Extracting resume content...',
+            'Analyzing job requirements...',
+            'Running JobAnalysisAgent...',
+            'Matching skills and keywords...',
+            'Querying AI model...',
+            'Generating recommendations...',
+            'Finalizing analysis...'
+        ];
+        
+        let currentStatusIndex = 0;
+        let statusInterval;
+        
+        function cycleStatusMessages() {
+            submitBtn.textContent = statusMessages[currentStatusIndex];
+            currentStatusIndex = (currentStatusIndex + 1) % statusMessages.length;
+        }
+        
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -238,7 +257,12 @@
             }
             
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Processing with AI...';
+            currentStatusIndex = 0;
+            
+            // Start cycling through status messages
+            submitBtn.textContent = statusMessages[0];
+            statusInterval = setInterval(cycleStatusMessages, 2000); // Change every 2 seconds
+            
             responseBox.classList.remove('show');
             
             try {
@@ -251,6 +275,9 @@
                 
                 const data = await response.json();
                 
+                // Clear the status interval
+                clearInterval(statusInterval);
+                
                 if (data.status === 'success') {
                     // Display the AI response
                     promptPreview.textContent = `Position: ${data.job_position}, Keywords: ${data.job_keywords}`;
@@ -258,17 +285,25 @@
                     responseBox.classList.add('show');
                     showMessage('AI response received!', 'success');
                     form.reset();
+                    submitBtn.textContent = 'Analysis Complete!';
+                    
+                    // Reset button text after 3 seconds
+                    setTimeout(() => {
+                        submitBtn.textContent = 'Submit';
+                    }, 3000);
                 } else {
                     showMessage(data.message || 'An error occurred', 'error');
                     if (data.hint) {
                         showMessage(data.message + '\n' + data.hint, 'error');
                     }
+                    submitBtn.textContent = 'Submit';
                 }
             } catch (error) {
+                clearInterval(statusInterval);
                 showMessage('Failed to submit. Please try again.', 'error');
+                submitBtn.textContent = 'Submit';
             } finally {
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Submit';
             }
         });
         

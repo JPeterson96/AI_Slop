@@ -216,3 +216,167 @@ class ExtractJobPostingInfo(BaseAgent):
         """
         
         return orchestrator.query_llm(prompt)
+    
+class JobRankingAndAnalysis(BaseAgent):
+    """
+    Specialized agent for sorting jobs by best fit along with pros and cons of each.
+    Extracts skills for database storage and provides comprehensive job analysis.
+    """
+    
+    def __init__(self):
+        super().__init__(
+            name="JobRankingAndAnalysisAgent",
+            description="Ranks jobs based on best fit for user and creates detailed analysis with pros/cons and skills extraction"
+        )
+    
+    def execute(self, context: Dict[str, Any], orchestrator) -> str:
+        """
+        Analyze each job for best fit and provide detailed feedback.
+        
+        Args:
+            context: Dictionary containing job_position, job_keywords, resume, and filtered_jobs
+            orchestrator: Reference to the orchestrator for LLM queries
+            
+        Returns:
+            str: Comprehensive analysis results with rankings, summaries, pros/cons, and skills
+        """
+        job_position = context.get("job_position", "")
+        job_keywords = context.get("job_keywords", "")
+        resume = context.get("resume", "")
+        
+        # Get filtered jobs from ExtractJobPostingInfo agent result
+        filtered_jobs = context.get("ExtractJobPostingInfo_result", "")
+        if not filtered_jobs or filtered_jobs == "No matching jobs found.":
+            return "No jobs available for ranking and analysis. Please run job extraction first."
+        
+        orchestrator._update_status("Analyzing job fit and relevance...")
+        
+        prompt = f"""You are an expert career advisor and job matching specialist. Analyze the following information to provide comprehensive job rankings and insights.
+
+**CANDIDATE PROFILE:**
+Target Position(s): {job_position}
+Desired Keywords: {job_keywords}
+Resume Content: {resume[:3000]}
+
+**AVAILABLE JOB POSTINGS:**
+{filtered_jobs[:4000]}
+
+**TASK INSTRUCTIONS:**
+You must provide a comprehensive analysis in the following structured format:
+
+## JOB RANKINGS (Best to Worst Fit)
+
+For each job, provide:
+
+### Job #[NUMBER]: [Job Title] at [Company]
+**Match Score: [X/10]**
+**Summary:** [2-3 sentence overview of the role and why it matches/doesn't match]
+
+**PROS:**
+- [Specific positive aspects that align with candidate's profile]
+- [Growth opportunities, company benefits, skill development]
+- [Location, salary, culture fit indicators]
+
+**CONS:**
+- [Missing requirements or skill gaps]
+- [Potential challenges or mismatches]
+- [Areas where candidate might struggle]
+
+**Key Skills Required:** [List 5-8 main technical/soft skills from job posting]
+**Skills Match:** [Which candidate skills align] / [Which are missing]
+
+---
+
+## OVERALL SKILLS ANALYSIS
+
+**All Skills Mentioned Across Jobs:**
+- [Skill Name]: Mentioned in [X] jobs
+- [Skill Name]: Mentioned in [X] jobs
+- [Continue for all unique skills found]
+
+**Candidate's Strongest Matches:**
+- [Skills from resume that appear frequently in job postings]
+
+**Priority Skills to Develop:**
+- [Most frequently requested skills missing from resume]
+
+**RECOMMENDATIONS:**
+1. [Specific advice for improving candidacy]
+2. [Skills to prioritize learning]
+3. [Resume enhancement suggestions]
+
+Please ensure jobs are ranked from highest match score (best fit) to lowest match score (worst fit)."""
+        
+        orchestrator._update_status("Generating job rankings and analysis...")
+        result = orchestrator.query_llm(prompt)
+        
+        # Extract and format skills for future database storage
+        skills_extraction_prompt = f"""Based on the job analysis above, extract all unique skills mentioned across all job postings into a clean, structured list for database storage.
+
+**Previous Analysis:**
+{result[:2000]}
+
+**Extract and format as:**
+SKILLS_FOR_DB:
+[
+  {{"skill": "Python", "frequency": 3, "category": "Programming Language"}},
+  {{"skill": "Machine Learning", "frequency": 2, "category": "Technical Skill"}},
+  {{"skill": "Leadership", "frequency": 4, "category": "Soft Skill"}},
+  ...continue for all skills
+]
+
+Focus on:
+- Technical skills (programming languages, tools, frameworks)
+- Soft skills (communication, leadership, etc.)
+- Industry-specific skills
+- Certifications mentioned
+
+Categorize each skill and count how many job postings mentioned it."""
+        
+        orchestrator._update_status("Extracting skills data...")
+        skills_data = orchestrator.query_llm(skills_extraction_prompt)
+        
+        # Combine the results
+        final_result = f"""{result}
+
+---
+
+## SKILLS DATABASE EXTRACTION
+{skills_data}
+
+---
+**Analysis completed by {self.name}**
+**Timestamp: Generated for job search optimization and skills gap analysis**"""
+        
+        return final_result
+    
+    def _calculate_match_score(self, job_requirements: str, resume: str, keywords: str) -> int:
+        """
+        Helper method to calculate a rough match score between job and candidate.
+        This could be enhanced with more sophisticated matching algorithms.
+        
+        Args:
+            job_requirements: The job posting text
+            resume: Candidate's resume text
+            keywords: Desired keywords
+            
+        Returns:
+            int: Match score from 1-10
+        """
+        # This is a placeholder for more sophisticated matching logic
+        # In a real implementation, you might use NLP techniques, skill extraction, etc.
+        
+        job_lower = job_requirements.lower()
+        resume_lower = resume.lower()
+        keywords_lower = keywords.lower().split(',')
+        
+        matches = 0
+        total_keywords = len(keywords_lower)
+        
+        for keyword in keywords_lower:
+            if keyword.strip() in job_lower and keyword.strip() in resume_lower:
+                matches += 1
+        
+        # Basic scoring: 5 base points + keyword matches
+        score = min(10, 5 + (matches / max(1, total_keywords)) * 5)
+        return int(score)
