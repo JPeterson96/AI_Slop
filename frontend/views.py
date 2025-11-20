@@ -2,11 +2,16 @@ from django.shortcuts import render
 from django.http import JsonResponse
 from AI_Slop.ollama_client import query_ollama
 from AI_Slop.orchestrator import Orchestrator
-from AI_Slop.agents import JobAnalysisAgent
+from AI_Slop.agents import ExtractJobPostingInfo, JobRankingAndAnalysis, SpreadsheetExportAgent
 from django.views.decorators.csrf import csrf_exempt
 import PyPDF2
 import docx
 import io
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 
 def index(request):
@@ -65,34 +70,53 @@ def submit_text(request):
         resume_file = request.FILES.get('resume')
         
         # Validate inputs
-        if not job_position or not job_keywords or not resume_file:
+        if not job_position or not resume_file:
             return JsonResponse({
                 'status': 'error',
-                'message': 'Please provide job position, keywords, and resume'
+                'message': 'Please provide job position and resume (keywords are optional)'
             }, status=400)
         
         try:
             # Extract text from resume
             resume_content = extract_text_from_file(resume_file)
             
-            # Initialize orchestrator and agents
-            orchestrator = Orchestrator(model="llama3")
+            # Initialize orchestrator and agents following architecture diagram
+            model = os.getenv('OLLAMA_MODEL', 'llama3')
+            orchestrator = Orchestrator(model=model)
             
-            # Register a generic agent or specialized job analysis agent
-            job_agent = JobAnalysisAgent()
-            orchestrator.register_agent(job_agent)
+            # Register agents per workflow: ExtractJobPostingInfo -> JobRankingAndAnalysis -> SpreadsheetExportAgent
+            from AI_Slop.agents import ExtractJobPostingInfo, JobRankingAndAnalysis, SpreadsheetExportAgent
+            
+            extraction_agent = ExtractJobPostingInfo()
+            ranking_agent = JobRankingAndAnalysis()
+            export_agent = SpreadsheetExportAgent()
+            
+            orchestrator.register_agent(extraction_agent)
+            orchestrator.register_agent(ranking_agent)
+            orchestrator.register_agent(export_agent)
             
             # Execute workflow
             job_data = {
                 "job_position": job_position,
-                "job_keywords": job_keywords,
+                "job_keywords": job_keywords if job_keywords.strip() else "No specific skills filter",
                 "resume": resume_content
             }
             
             result = orchestrator.execute_workflow(job_data)
             
-            # Extract the agent's response
-            agent_response = result["agent_results"][0]["result"] if result["agent_results"] else "No response generated"
+            # Extract the agent's response from the new workflow structure
+            workflow_stages = result.get("workflow_stages", {})
+            
+            # Get response from job ranking stage (primary) or job extraction, or final recommendations
+            if workflow_stages.get("job_ranking"):
+                agent_response = workflow_stages["job_ranking"] 
+            elif workflow_stages.get("job_extraction"):
+                agent_response = workflow_stages["job_extraction"]
+            elif result.get("final_recommendations"):
+                final_rec = result["final_recommendations"]
+                agent_response = f"Analysis Summary: {final_rec.get('summary', 'Job search completed')}\n\nTotal jobs analyzed: {final_rec.get('total_jobs_analyzed', 0)}\n\nNext steps: {', '.join(final_rec.get('next_steps', []))}"
+            else:
+                agent_response = "Job search workflow completed. Please check the workflow stages for detailed results."
             
             return JsonResponse({
                 'status': 'success',
@@ -106,7 +130,7 @@ def submit_text(request):
             return JsonResponse({
                 'status': 'error',
                 'message': f'Error: {str(e)}',
-                'hint': 'Make sure Ollama is running (ollama serve) and the model is installed (ollama pull llama3)'
+                'hint': 'Make sure GROQ_API_KEY is set in environment variables. Get your free key from https://console.groq.com/'
             }, status=500)
     
     return JsonResponse({'status': 'error', 'message': 'Invalid request method'})

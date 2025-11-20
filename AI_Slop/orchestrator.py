@@ -2,11 +2,34 @@
 Orchestrator for managing AI agent workflows.
 This module coordinates calls to the local LLM and manages agent interactions.
 Based on the system architecture diagram with UI -> Service -> AI Orchestrator -> Agents workflow.
+
+CLOUD LLM SETUP:
+Currently configured to use Groq's free tier for traveling/remote work.
+To switch back to local Ollama:
+1. Comment out the Groq imports and query_groq function
+2. Uncomment the Ollama import: from AI_Slop.ollama_client import query_ollama
+3. In query_llm method, replace query_groq call with query_ollama call
+4. Make sure Ollama is running locally: ollama serve
 """
-from AI_Slop.ollama_client import query_ollama
+# LOCAL OLLAMA (commented out for cloud usage)
+# from AI_Slop.ollama_client import query_ollama
+
+# CLOUD LLM - GROQ (current active setup)
+import os
 from typing import Dict, Any, List, Optional
 import json
 import re
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+    print("WARNING: Groq not installed. Run: pip install groq")
 
 
 class Orchestrator:
@@ -14,6 +37,18 @@ class Orchestrator:
     Orchestrator class that manages the workflow of AI agents.
     It coordinates calls to the local LLM and handles agent communication.
     Implements the architecture: UI -> Service -> AI Orchestrator -> Agents (1,2,3) with data consistency.
+    
+    CURRENT SETUP: Groq Cloud API (for traveling/remote work)
+    
+    QUICK SETUP FOR GROQ:
+    1. pip install groq
+    2. Get free API key: https://console.groq.com/
+    3. export GROQ_API_KEY="your-key-here"
+    4. Ready to use! (6,000 requests/day free)
+    
+    TO SWITCH BACK TO LOCAL OLLAMA:
+    - See instructions in query_llm method below
+    - Make sure ollama serve is running locally
     """
     
     def __init__(self, model: str = "llama3"):
@@ -50,7 +85,13 @@ class Orchestrator:
     
     def query_llm(self, prompt: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
-        Query the local LLM with a prompt and optional context.
+        Query the LLM with a prompt and optional context.
+        Currently using Groq cloud API for remote work compatibility.
+        
+        TO SWITCH BACK TO LOCAL OLLAMA:
+        1. Make sure Ollama is running: ollama serve
+        2. Replace the return statement below with: return query_ollama(self.model, enhanced_prompt)
+        3. Uncomment the ollama import at the top of this file
         
         Args:
             prompt: The prompt to send to the LLM
@@ -66,7 +107,11 @@ class Orchestrator:
         else:
             enhanced_prompt = prompt
         
-        return query_ollama(self.model, enhanced_prompt)
+        # CURRENT: Using Groq cloud API
+        return query_groq(self.model, enhanced_prompt)
+        
+        # TO SWITCH BACK TO OLLAMA: Replace above line with:
+        # return query_ollama(self.model, enhanced_prompt)
     
     def _format_context(self, context: Dict[str, Any]) -> str:
         """
@@ -112,10 +157,23 @@ class Orchestrator:
             "data_consistency_log": []
         }
         
-        # Step 2: Execute Job Site API Integration (when implemented)
-        # TODO: Implement job site API calls based on normalized position titles and keywords
-        # This would fetch raw job postings from multiple sources (Indeed, LinkedIn, etc.)
+        # Step 2: Execute Job Site API Integration
         raw_job_postings = self._fetch_job_postings(normalized_data)
+        
+        # Check if job fetching failed
+        if raw_job_postings.startswith("ERROR:"):
+            results["workflow_stages"]["job_fetch_error"] = raw_job_postings
+            results["final_recommendations"] = {
+                "summary": "Job search failed - API unavailable",
+                "error": raw_job_postings,
+                "next_steps": [
+                    "Set up RAPIDAPI_KEY environment variable",
+                    "Create JSearch client integration", 
+                    "Retry job search once API is configured"
+                ]
+            }
+            self._update_status("Workflow stopped - Job API unavailable")
+            return results
         
         # Step 3: Agent 1 - Job Posting Extraction and Filtering
         self._update_status("Running Job Extraction Agent...")
@@ -129,18 +187,8 @@ class Orchestrator:
         else:
             results["workflow_stages"]["job_extraction"] = "Agent not registered"
         
-        # Step 4: Agent 2 - Job Analysis and Matching  
-        self._update_status("Running Job Analysis Agent...")
-        if self._has_agent_by_name("JobAnalysisAgent"):
-            agent2_result = self._execute_agent_with_validation("JobAnalysisAgent", {
-                **normalized_data,
-                "filtered_jobs": self.context.get("filtered_jobs", "")
-            })
-            results["workflow_stages"]["job_analysis"] = agent2_result
-        else:
-            results["workflow_stages"]["job_analysis"] = "Agent not registered"
-        
-        # Step 5: Agent 3 - Job Ranking and Skills Extraction
+        # Step 4: Agent 2 - Job Ranking and Skills Extraction (follows diagram logic)
+        # Skip JobAnalysisAgent - go directly from extraction to ranking per architecture diagram
         self._update_status("Running Job Ranking Agent...")
         if self._has_agent_by_name("JobRankingAndAnalysisAgent"):
             agent3_result = self._execute_agent_with_validation("JobRankingAndAnalysisAgent", {
@@ -149,12 +197,26 @@ class Orchestrator:
             })
             results["workflow_stages"]["job_ranking"] = agent3_result
             
+            # Store result in context for spreadsheet export
+            self.context["JobRankingAndAnalysisAgent_result"] = agent3_result
+            
             # Extract skills for database storage
             extracted_skills = self._extract_skills_from_result(agent3_result)
             results["skills_extracted"] = extracted_skills
             self.skills_database.extend(extracted_skills)
         else:
             results["workflow_stages"]["job_ranking"] = "Agent not registered"
+        
+        # Step 5: Spreadsheet Export for Testing
+        self._update_status("Exporting results to spreadsheet...")
+        if self._has_agent_by_name("SpreadsheetExportAgent"):
+            export_result = self._execute_agent_with_validation("SpreadsheetExportAgent", {
+                **normalized_data,
+                **self.context
+            })
+            results["workflow_stages"]["spreadsheet_export"] = export_result
+        else:
+            results["workflow_stages"]["spreadsheet_export"] = "SpreadsheetExportAgent not registered"
         
         # Step 6: Data Persistence (when DB is implemented)
         # TODO: Store results in database
@@ -243,7 +305,8 @@ and suggest improvements."""
         normalized["resume"] = str(resume).strip()
         
         # Add metadata for consistency tracking
-        normalized["processing_timestamp"] = "2025-11-12"  # TODO: Use actual timestamp
+        from datetime import datetime
+        normalized["processing_timestamp"] = datetime.now().isoformat()
         normalized["data_version"] = "1.0"
         
         return normalized
@@ -282,8 +345,8 @@ and suggest improvements."""
         """Validate that agent receives consistent input data."""
         required_fields = {
             "ExtractJobPostingInfo": ["job_position", "job_keywords", "job_postings"],
-            "JobAnalysisAgent": ["job_position", "job_keywords", "resume"],
-            "JobRankingAndAnalysisAgent": ["job_position", "job_keywords", "resume"]
+            "JobRankingAndAnalysisAgent": ["job_position", "job_keywords", "resume"],
+            "SpreadsheetExportAgent": ["job_position", "job_keywords"]
         }
         
         if agent_name in required_fields:
@@ -326,41 +389,76 @@ and suggest improvements."""
         """Generate a fallback response when agent fails or produces poor output."""
         fallbacks = {
             "ExtractJobPostingInfo": "No job postings available for extraction at this time.",
-            "JobAnalysisAgent": f"Basic analysis: The candidate profile for {context.get('job_position', 'specified positions')} requires further evaluation.",
-            "JobRankingAndAnalysisAgent": "Job ranking analysis unavailable. Please review job requirements manually."
+            "JobRankingAndAnalysisAgent": "Job ranking analysis unavailable. Please review job requirements manually.",
+            "SpreadsheetExportAgent": "Spreadsheet export unavailable. Results are available in text format only."
         }
         return fallbacks.get(agent_name, "Agent response unavailable.")
     
     def _fetch_job_postings(self, normalized_data: Dict[str, Any]) -> str:
         """
-        Fetch job postings from external APIs.
-        TODO: Implement actual API calls to job sites (Indeed, LinkedIn, etc.)
+        Fetch job postings from JSearch API (RapidAPI).
+        Integrates with real job sites: LinkedIn, Indeed, Monster, ZipRecruiter, etc.
+        
+        Returns:
+            str: Real job postings data or error message if API unavailable
         """
-        # Placeholder for job site API integration
-        # This would use normalized_data to query multiple job boards
         positions = normalized_data.get("job_position", "")
         keywords = normalized_data.get("job_keywords", "")
         
-        # TODO: Implement actual API calls here
-        # - Indeed API integration
-        # - LinkedIn Jobs API
-        # - Other job board APIs
-        # - Web scraping with Playwright/Selenium (as noted in diagram)
-        
-        # Return mock data for now
-        return f"""
-        Mock Job Posting 1: Software Engineer at TechCorp
-        Requirements: {keywords}
-        Location: Remote
-        Description: Looking for a software engineer with experience in the specified technologies.
-        
-        Mock Job Posting 2: Senior Developer at StartupInc  
-        Requirements: Related to {positions}
-        Location: San Francisco
-        Description: Senior role requiring expertise in relevant technologies.
-        
-        [Additional job postings would be fetched from APIs]
-        """
+        try:
+            # Import and use JSearch client
+            from AI_Slop.jsearch_client import JSearchClient
+            
+            self._update_status("Connecting to job search APIs...")
+            
+            # Initialize JSearch client
+            jsearch_client = JSearchClient()
+            
+            self._update_status("Fetching real job postings...")
+            
+            # Search for jobs using positions and keywords
+            jobs = jsearch_client.search_jobs_by_position_and_keywords(
+                job_positions=positions,
+                job_keywords=keywords,
+                location="United States",
+                max_results=15  # Get more jobs for better analysis
+            )
+            
+            if not jobs:
+                return "No job postings found matching the specified criteria."
+            
+            # Format jobs for agent consumption
+            formatted_jobs = jsearch_client.format_jobs_for_agents(jobs)
+            
+            # Store raw job data for later use by agents
+            self.context["raw_job_data"] = jobs
+            
+            self._update_status(f"Found {len(jobs)} relevant job postings")
+            
+            return formatted_jobs
+            
+        except ImportError:
+            error_msg = "JSearch client not available. Please create AI_Slop/jsearch_client.py with JSearchClient class."
+            self._update_status("Job API unavailable")
+            return f"ERROR: {error_msg}"
+            
+        except ValueError as e:
+            if "RapidAPI key" in str(e):
+                error_msg = f"JSearch API Error: {str(e)}\n\nPlease set RAPIDAPI_KEY environment variable with your RapidAPI key."
+                self._update_status("API key missing")
+                return f"ERROR: {error_msg}"
+            else:
+                error_msg = f"JSearch API configuration error: {str(e)}"
+                self._update_status("API configuration error")
+                return f"ERROR: {error_msg}"
+                
+        except Exception as e:
+            error_msg = f"JSearch API error: {str(e)}"
+            self._update_status("Job search failed")
+            print(f"[ORCHESTRATOR] {error_msg}")
+            return f"ERROR: {error_msg}"
+    
+
     
     def _extract_skills_from_result(self, agent_result: str) -> List[Dict[str, Any]]:
         """
@@ -463,3 +561,54 @@ and suggest improvements."""
     def _log_consistency_issue(self, issue: str):
         """Log a data consistency issue for debugging."""
         print(f"[CONSISTENCY WARNING] {issue}")  # TODO: Use proper logging system
+
+def query_groq(model: str, prompt: str) -> str:
+    """
+    Query Groq's free tier API as cloud alternative to Ollama.
+    
+    SETUP INSTRUCTIONS:
+    1. Sign up at https://console.groq.com/
+    2. Get your free API key (6,000 requests/day)
+    3. Set environment variable: export GROQ_API_KEY="your-key-here"
+    4. Install Groq: pip install groq
+    
+    Args:
+        model: Model name (groq uses different model names than ollama)
+        prompt: The prompt to send
+        
+    Returns:
+        str: The response from Groq
+    """
+    if not GROQ_AVAILABLE:
+        return "ERROR: Groq not installed. Run: pip install groq"
+    
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return "ERROR: GROQ_API_KEY environment variable not set. Get your free key from https://console.groq.com/"
+    
+    try:
+        client = Groq(api_key=api_key)
+        
+        # Map Ollama model names to Groq model names (updated for current models)
+        model_mapping = {
+            "llama3": "llama-3.1-8b-instant",  # Updated model name
+            "llama2": "llama-3.1-70b-versatile",  # Updated model name
+            "mixtral": "mixtral-8x7b-32768",
+            "gemma": "gemma-7b-it"
+        }
+        
+        groq_model = model_mapping.get(model, "llama3-8b-8192")
+        
+        response = client.chat.completions.create(
+            model=groq_model,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=4000,
+            temperature=0.7
+        )
+        
+        return response.choices[0].message.content
+        
+    except Exception as e:
+        return f"Groq API Error: {str(e)}. Check your API key and internet connection."

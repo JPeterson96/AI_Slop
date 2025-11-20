@@ -1,0 +1,23 @@
+
+# Environment Variables
+.env
+*.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+
+# Django
+db.sqlite3
+*.log
+.DS_Store
+*.pyc

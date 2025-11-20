@@ -1,0 +1,23 @@
+John Doe
+Software Engineer
+
+EXPERIENCE:
+- 5 years Python development
+- Machine Learning projects with TensorFlow
+- Full-stack web development using Django and React
+- Experience with Docker and Kubernetes
+- Database management with PostgreSQL and MongoDB
+
+SKILLS:
+- Programming Languages: Python, JavaScript, Java, SQL
+- Frameworks: Django, Flask, React, Angular
+- Machine Learning: TensorFlow, scikit-learn, pandas, numpy
+- Cloud: AWS, Azure, Docker, Kubernetes
+- Databases: PostgreSQL, MongoDB, Redis
+- Tools: Git, Jenkins, Jira
+
+EDUCATION:
+- Bachelor's in Computer Science
+- Machine Learning Specialization Certificate
+
+Looking for software engineering roles focused on machine learning and web development.

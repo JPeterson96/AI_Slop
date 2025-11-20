@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Slop - Submit Text</title>
+    <title>AI Job Assistant</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+        
         * {
             margin: 0;
             padding: 0;
@@ -12,80 +14,193 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0f0f;
+            background-image: 
+                radial-gradient(circle at 20% 80%, rgba(0, 191, 255, 0.25) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(0, 255, 127, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(0, 150, 200, 0.1) 0%, transparent 50%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
             padding: 20px;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='%23333'%3e%3cpath d='m0 2 l30 30 m0 -30 l-30 30'/%3e%3c/svg%3e") repeat;
+            opacity: 0.03;
+            pointer-events: none;
         }
         
         .container {
-            background: white;
+            background: rgba(16, 24, 24, 0.95);
+            backdrop-filter: blur(20px);
             padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-            max-width: 600px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 191, 255, 0.2);
+            box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            max-width: 650px;
             width: 100%;
+            position: relative;
+        }
+        
+        .container::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, 
+                transparent,
+                rgba(0, 191, 255, 0.4) 50%,
+                transparent
+            );
+            border-radius: 16px;
+            z-index: -1;
+            animation: borderGlow 3s ease-in-out infinite alternate;
+        }
+        
+        @keyframes borderGlow {
+            0% { opacity: 0.3; }
+            100% { opacity: 0.7; }
         }
         
         h1 {
-            color: #333;
+            color: #ffffff;
             margin-bottom: 10px;
-            font-size: 28px;
+            font-size: 32px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            background: linear-gradient(135deg, #00bfff, #00ff7f);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 20px rgba(0, 191, 255, 0.5);
         }
         
         .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 14px;
+            color: #8892b0;
+            margin-bottom: 35px;
+            font-size: 15px;
+            font-weight: 400;
+            font-family: 'JetBrains Mono', monospace;
+            opacity: 0.8;
         }
         
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 25px;
+            position: relative;
         }
         
         label {
             display: block;
-            margin-bottom: 8px;
-            color: #333;
+            margin-bottom: 10px;
+            color: #00ffff;
             font-weight: 500;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
-        textarea {
+        textarea, input[type="file"] {
             width: 100%;
-            padding: 12px;
-            border: 2px solid #e1e8ed;
+            padding: 16px;
+            background: rgba(10, 25, 47, 0.8);
+            border: 1px solid rgba(65, 105, 225, 0.4);
             border-radius: 8px;
-            font-size: 16px;
-            font-family: inherit;
+            font-size: 15px;
+            font-family: 'JetBrains Mono', monospace;
+            color: #ccd6f6;
             resize: vertical;
             min-height: 150px;
-            transition: border-color 0.3s;
+            transition: all 0.3s ease;
         }
         
-        textarea:focus {
+        textarea::placeholder {
+            color: #495670;
+            font-style: italic;
+        }
+        
+        textarea:focus, input[type="file"]:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #00ffff;
+            box-shadow: 
+                0 0 0 3px rgba(0, 255, 255, 0.1),
+                0 4px 20px rgba(0, 255, 255, 0.2);
+            background: rgba(10, 25, 47, 1);
+        }
+        
+        input[type="file"] {
+            min-height: auto;
+            padding: 12px 16px;
+            cursor: pointer;
+            background: rgba(16, 16, 24, 0.9);
+        }
+        
+        input[type="file"]::-webkit-file-upload-button {
+            background: linear-gradient(135deg, #191970, #00ff7f);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            margin-right: 10px;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 500;
         }
         
         button {
             width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 18px;
+            background: linear-gradient(135deg, #191970 0%, #00ff7f 100%);
             color: white;
             border: none;
-            border-radius: 8px;
+            border-radius: 10px;
             font-size: 16px;
             font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+        
+        button:hover::before {
+            left: 100%;
         }
         
         button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+            box-shadow: 
+                0 10px 30px rgba(25, 25, 112, 0.6),
+                0 0 20px rgba(0, 255, 127, 0.3);
         }
         
         button:active {
@@ -100,98 +215,166 @@
         
         .message {
             margin-top: 20px;
-            padding: 12px;
+            padding: 15px;
             border-radius: 8px;
             display: none;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            border-left: 4px solid;
         }
         
         .message.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: rgba(65, 105, 225, 0.1);
+            color: #4169e1;
+            border-left-color: #4169e1;
         }
         
         .message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: rgba(255, 69, 0, 0.1);
+            color: #ff6b35;
+            border-left-color: #ff6b35;
         }
         
         .message.show {
             display: block;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         
         .response-box {
-            margin-top: 20px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
+            margin-top: 25px;
+            padding: 25px;
+            background: rgba(10, 25, 47, 0.8);
+            border-radius: 12px;
+            border: 1px solid rgba(65, 105, 225, 0.4);
             display: none;
+            backdrop-filter: blur(10px);
         }
         
         .response-box.show {
             display: block;
+            animation: fadeInUp 0.5s ease;
+        }
+        
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         
         .response-box h3 {
-            color: #333;
-            margin-bottom: 10px;
+            color: #4169e1;
+            margin-bottom: 15px;
             font-size: 18px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
         .response-content {
-            color: #555;
-            line-height: 1.6;
+            color: #ccd6f6;
+            line-height: 1.7;
             white-space: pre-wrap;
             word-wrap: break-word;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 3px solid #191970;
         }
         
         .prompt-preview {
-            background: #e9ecef;
-            padding: 10px;
-            border-radius: 4px;
-            margin-bottom: 15px;
-            font-size: 14px;
-            color: #666;
+            background: rgba(16, 16, 24, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #8892b0;
+            font-family: 'JetBrains Mono', monospace;
+            border: 1px solid rgba(25, 25, 112, 0.4);
         }
         
         .prompt-preview strong {
-            color: #333;
+            color: #00ff7f;
+            font-weight: 600;
+        }
+        
+        /* Terminal-style scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: rgba(16, 16, 24, 0.5);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(65, 105, 225, 0.4);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(65, 105, 225, 0.6);
+        }
+        
+        /* Tech glow effects */
+        .tech-accent {
+            color: #4169e1;
+            text-shadow: 0 0 10px rgba(65, 105, 225, 0.5);
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                padding: 25px;
+            }
+            
+            h1 {
+                font-size: 24px;
+            }
+            
+            textarea, input[type="file"] {
+                font-size: 14px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>AI Job Application Assistant</h1>
-        <p class="subtitle">Enter your job details and upload your resume for AI-powered assistance</p>
+        <h1>AI Job Assistant</h1>
+        <p class="subtitle">> Neural job matching system initialized</p>
         
         <form id="textForm" enctype="multipart/form-data">
             {% csrf_token %}
             <div class="form-group">
-                <label for="jobPosition">Job Position (comma-delimited):</label>
+                <label for="jobPosition">// TARGET_POSITIONS:</label>
                 <textarea 
                     id="jobPosition" 
                     name="job_position" 
-                    placeholder="e.g., Software Engineer, Data Scientist, Product Manager"
+                    placeholder="Software Engineer, Backend Developer, DevOps Engineer..."
                     required
                     style="min-height: 80px;"
                 ></textarea>
             </div>
             
             <div class="form-group">
-                <label for="jobKeywords">Job Keywords (comma-delimited):</label>
+                <label for="jobKeywords">// SKILL_FILTERS (OPTIONAL):</label>
                 <textarea 
                     id="jobKeywords" 
                     name="job_keywords" 
-                    placeholder="e.g., Python, Machine Learning, Agile, Cloud Computing"
-                    required
+                    placeholder="(Optional) Python, Kubernetes, React, Machine Learning, Docker..."
                     style="min-height: 80px;"
                 ></textarea>
             </div>
             
             <div class="form-group">
-                <label for="resumeUpload">Upload Resume:</label>
+                <label for="resumeUpload">// RESUME_DATA:</label>
                 <input 
                     type="file" 
                     id="resumeUpload" 
@@ -204,13 +387,13 @@
             
             <div id="responseBox" class="response-box">
                 <div class="prompt-preview">
-                    <strong>Your prompt:</strong> <span id="promptPreview"></span>
+                    <strong>// QUERY_PARAMS:</strong> <span id="promptPreview"></span>
                 </div>
-                <h3>AI Response:</h3>
+                <h3>// NEURAL_OUTPUT:</h3>
                 <div id="responseContent" class="response-content"></div>
             </div>
             
-            <button type="submit" id="submitBtn">Submit</button>
+            <button type="submit" id="submitBtn">EXECUTE_ANALYSIS</button>
         </form>
         
         <div id="message" class="message"></div>
@@ -227,13 +410,14 @@
         
         // Status messages to cycle through
         const statusMessages = [
-            'Extracting resume content...',
-            'Analyzing job requirements...',
-            'Running JobAnalysisAgent...',
-            'Matching skills and keywords...',
-            'Querying AI model...',
-            'Generating recommendations...',
-            'Finalizing analysis...'
+            'PARSING_RESUME_DATA...',
+            'CONNECTING_TO_JOB_APIS...',
+            'EXTRACTION_AGENT_RUNNING...',
+            'RANKING_ALGORITHM_ACTIVE...',
+            'NEURAL_ANALYSIS_PROCESSING...',
+            'SKILLS_MATRIX_BUILDING...',
+            'EXPORTING_TO_DATASHEET...',
+            'OPTIMIZATION_COMPLETE...'
         ];
         
         let currentStatusIndex = 0;
@@ -251,8 +435,8 @@
             const jobKeywords = document.getElementById('jobKeywords').value.trim();
             const resumeFile = document.getElementById('resumeUpload').files[0];
             
-            if (!jobPosition || !jobKeywords || !resumeFile) {
-                showMessage('Please fill in all fields and upload a resume', 'error');
+            if (!jobPosition || !resumeFile) {
+                showMessage('ERROR: Missing required input parameters (position and resume)', 'error');
                 return;
             }
             
@@ -280,28 +464,27 @@
                 
                 if (data.status === 'success') {
                     // Display the AI response
-                    promptPreview.textContent = `Position: ${data.job_position}, Keywords: ${data.job_keywords}`;
+                    promptPreview.textContent = `TARGETS: ${data.job_position} | FILTERS: ${data.job_keywords}`;
                     responseContent.textContent = data.response;
                     responseBox.classList.add('show');
-                    showMessage('AI response received!', 'success');
-                    form.reset();
-                    submitBtn.textContent = 'Analysis Complete!';
+                    showMessage('NEURAL_ANALYSIS_COMPLETE', 'success');
+                    submitBtn.textContent = 'ANALYSIS_COMPLETE';
                     
                     // Reset button text after 3 seconds
                     setTimeout(() => {
-                        submitBtn.textContent = 'Submit';
+                        submitBtn.textContent = 'EXECUTE_ANALYSIS';
                     }, 3000);
                 } else {
-                    showMessage(data.message || 'An error occurred', 'error');
+                    showMessage(`ERROR: ${data.message || 'System malfunction detected'}`, 'error');
                     if (data.hint) {
-                        showMessage(data.message + '\n' + data.hint, 'error');
+                        showMessage(`ERROR: ${data.message}\nHINT: ${data.hint}`, 'error');
                     }
-                    submitBtn.textContent = 'Submit';
+                    submitBtn.textContent = 'EXECUTE_ANALYSIS';
                 }
             } catch (error) {
                 clearInterval(statusInterval);
-                showMessage('Failed to submit. Please try again.', 'error');
-                submitBtn.textContent = 'Submit';
+                showMessage('NETWORK_ERROR: Connection failed. Retry protocol initiated.', 'error');
+                submitBtn.textContent = 'EXECUTE_ANALYSIS';
             } finally {
                 submitBtn.disabled = false;
             }
