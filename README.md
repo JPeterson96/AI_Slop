@@ -53,7 +53,12 @@ UI (Frontend) → Django Views → AI Orchestrator → [Job Search API + AI Agen
    python manage.py runserver
    ```
 
-4. **Access Application**
+4. **Test LangChain Integration**
+   ```bash
+   python test_langchain_integration.py
+   ```
+
+5. **Access Application**
    - Open browser to: http://localhost:8000
    - Upload your resume, enter job positions and skills
    - Let AI analyze and rank the best opportunities!
@@ -81,10 +86,18 @@ export RAPIDAPI_KEY="your_rapidapi_key_here"
 Edit your `auth.env` file with these required variables:
 
 ```env
-# AI Processing
-GROQ_API_KEY=your_groq_api_key_here
+# LLM Provider (LangChain Unified Interface)
+LLM_PROVIDER=groq  # or "ollama"
 
-# Job Search API  
+# Groq Cloud API (if using groq)
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.1-8b-instant
+
+# Ollama Local API (if using ollama)  
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=llama3
+
+# Job Search API
 RAPIDAPI_KEY=your_rapidapi_key_here
 RAPIDAPI_HOST=jsearch.p.rapidapi.com
 
@@ -108,10 +121,11 @@ AI_Slop/
 ├── SETUP.md             # Detailed setup instructions
 ├── test_resume.txt      # Sample resume for testing
 ├── AI_Slop/             # Main Django project
-│   ├── orchestrator.py  # AI workflow coordinator
+│   ├── orchestrator.py  # AI workflow coordinator (LangChain integrated)
 │   ├── agents.py        # Specialized AI task agents
+│   ├── llm_client.py    # Unified LLM client (LangChain)
 │   ├── jsearch_client.py # Job search API integration
-│   ├── ollama_client.py # Local LLM integration (alternative)
+│   ├── ollama_client.py # Legacy local LLM integration
 │   └── settings.py      # Django configuration
 ├── frontend/            # Web interface
 │   ├── views.py        # Request handlers and file processing
@@ -161,17 +175,26 @@ AI_Slop/
 | **JobRankingAndAnalysis** | Ranks jobs and analyzes fit | Scored recommendations |
 | **SpreadsheetExportAgent** | Generates Excel reports | Downloadable analysis |
 
-### LLM Integration
+### LLM Integration (LangChain Unified Interface)
 
-**Current Setup: Groq Cloud API**
+**🔄 Easy Provider Switching:**
+```env
+# Change provider instantly - no code changes needed!
+LLM_PROVIDER=groq     # Groq Cloud API (default)
+LLM_PROVIDER=ollama   # Local Ollama
+```
+
+**Groq Cloud API (Default)**
 - ✅ Works anywhere with internet
 - ✅ 6,000 free requests/day
 - ✅ Fast inference times
+- ✅ Zero local setup required
 
-**Alternative: Local Ollama**
-- Switch by updating [`orchestrator.py`](AI_Slop/orchestrator.py)
-- Requires local Ollama installation
-- Better for privacy, requires more setup
+**Local Ollama (Alternative)**
+- ✅ Complete privacy and control
+- ✅ No API rate limits
+- ✅ Works offline
+- ⚙️ Requires local installation
 
 ### Job Data Sources
 
@@ -260,6 +283,18 @@ ModuleNotFoundError: No module named 'PyPDF2'
 ```
 - Solution: `pip install -r requirements.txt`
 
+**LangChain Import Errors**
+```
+ModuleNotFoundError: No module named 'langchain_groq'
+```
+- Solution: `pip install langchain langchain-groq langchain-ollama`
+
+**Provider Switching Issues**
+```
+LLM Error (ollama): Connection refused
+```
+- Solution: Start Ollama with `ollama serve` or switch to Groq with `LLM_PROVIDER=groq`
+
 ### Debug Mode
 
 Enable detailed logging by setting in `auth.env`:
@@ -274,6 +309,9 @@ DEBUG=True
 Django>=4.2.0
 python-dotenv>=1.0.0
 groq>=0.4.0
+langchain>=1.0.0
+langchain-groq>=1.0.0
+langchain-ollama>=1.0.0
 requests>=2.31.0
 PyPDF2>=3.0.0
 python-docx>=0.8.11
@@ -284,6 +322,17 @@ openpyxl>=3.1.0
 ### Installation
 ```bash
 pip install -r requirements.txt
+```
+
+### Testing LangChain Integration
+```bash
+# Test LLM providers and switching
+python test_langchain_integration.py
+
+# Should show:
+# ✅ PASS LLM Client
+# ✅ PASS Orchestrator  
+# ✅ PASS Provider Switching
 ```
 
 ## 🚀 Deployment

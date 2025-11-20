@@ -240,6 +240,104 @@
             animation: slideIn 0.3s ease;
         }
         
+        .results-display {
+            margin-top: 25px;
+            padding: 25px;
+            background: rgba(10, 25, 47, 0.8);
+            border-radius: 12px;
+            border: 1px solid rgba(65, 105, 225, 0.4);
+            backdrop-filter: blur(10px);
+        }
+        
+        .results-display.show {
+            display: block !important;
+            animation: fadeInUp 0.5s ease;
+        }
+        
+        .job-count h3 {
+            color: #00ff7f;
+            margin-bottom: 10px;
+            font-size: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+        }
+        
+        .job-count p {
+            color: #ccd6f6;
+            font-size: 18px;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 20px;
+        }
+        
+        .top-jobs h4 {
+            color: #4169e1;
+            margin-bottom: 12px;
+            font-size: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .top-jobs ul {
+            list-style: none;
+            margin-bottom: 20px;
+        }
+        
+        .top-jobs li {
+            color: #8892b0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(65, 105, 225, 0.2);
+        }
+        
+        .top-jobs li:last-child {
+            border-bottom: none;
+        }
+        
+        .top-jobs .job-title {
+            color: #ccd6f6;
+            font-weight: 500;
+        }
+        
+        .top-jobs .job-company {
+            color: #4169e1;
+            margin-left: 10px;
+        }
+        
+        .top-jobs .job-score {
+            color: #00ff7f;
+            float: right;
+            font-weight: 600;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .action-btn {
+            flex: 1;
+            padding: 12px;
+            background: rgba(25, 25, 112, 0.8);
+            color: #ccd6f6;
+            border: 1px solid rgba(65, 105, 225, 0.4);
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.3s ease;
+        }
+        
+        .action-btn:hover {
+            background: rgba(65, 105, 225, 0.8);
+            border-color: #4169e1;
+            transform: translateY(-2px);
+        }
+        
         @keyframes slideIn {
             from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -385,18 +483,25 @@
                 />
             </div>
             
-            <div id="responseBox" class="response-box">
-                <div class="prompt-preview">
-                    <strong>// QUERY_PARAMS:</strong> <span id="promptPreview"></span>
-                </div>
-                <h3>// NEURAL_OUTPUT:</h3>
-                <div id="responseContent" class="response-content"></div>
-            </div>
-            
             <button type="submit" id="submitBtn">EXECUTE_ANALYSIS</button>
         </form>
         
         <div id="message" class="message"></div>
+        
+        <div id="resultsDisplay" class="results-display" style="display: none;">
+            <div class="job-count">
+                <h3>// JOB_ANALYSIS_COMPLETE:</h3>
+                <p id="jobCount">0 jobs analyzed</p>
+            </div>
+            <div class="top-jobs">
+                <h4>// TOP_MATCHES:</h4>
+                <ul id="topJobsList"></ul>
+            </div>
+            <div class="actions">
+                <button id="viewSpreadsheetBtn" class="action-btn">VIEW_SPREADSHEET</button>
+                <button id="viewTraceBtn" class="action-btn">VIEW_TRACE_LOG</button>
+            </div>
+        </div>
     </div>
     
     <script>
@@ -428,6 +533,12 @@
             currentStatusIndex = (currentStatusIndex + 1) % statusMessages.length;
         }
         
+        const resultsDisplay = document.getElementById('resultsDisplay');
+        const jobCount = document.getElementById('jobCount');
+        const topJobsList = document.getElementById('topJobsList');
+        const viewSpreadsheetBtn = document.getElementById('viewSpreadsheetBtn');
+        const viewTraceBtn = document.getElementById('viewTraceBtn');
+        
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -436,7 +547,7 @@
             const resumeFile = document.getElementById('resumeUpload').files[0];
             
             if (!jobPosition || !resumeFile) {
-                showMessage('ERROR: Missing required input parameters (position and resume)', 'error');
+                showMessage('ERROR: Missing required input parameters (position and resume)', 'error', false);
                 return;
             }
             
@@ -447,7 +558,7 @@
             submitBtn.textContent = statusMessages[0];
             statusInterval = setInterval(cycleStatusMessages, 2000); // Change every 2 seconds
             
-            responseBox.classList.remove('show');
+            resultsDisplay.classList.remove('show');
             
             try {
                 const formData = new FormData(form);
@@ -463,40 +574,68 @@
                 clearInterval(statusInterval);
                 
                 if (data.status === 'success') {
-                    // Display the AI response
-                    promptPreview.textContent = `TARGETS: ${data.job_position} | FILTERS: ${data.job_keywords}`;
-                    responseContent.textContent = data.response;
-                    responseBox.classList.add('show');
-                    showMessage('NEURAL_ANALYSIS_COMPLETE', 'success');
+                    // Display job count and top jobs
+                    jobCount.textContent = `${data.job_count || 0} jobs analyzed`;
+                    
+                    // Clear and populate top jobs list
+                    topJobsList.innerHTML = '';
+                    if (data.top_jobs && data.top_jobs.length > 0) {
+                        data.top_jobs.slice(0, 5).forEach((job, index) => {
+                            const li = document.createElement('li');
+                            li.innerHTML = `
+                                <span class="job-title">${index + 1}. ${job.title}</span>
+                                <span class="job-company">@ ${job.company}</span>
+                                <span class="job-score">${job.score}/10</span>
+                            `;
+                            topJobsList.appendChild(li);
+                        });
+                    } else {
+                        const li = document.createElement('li');
+                        li.textContent = 'No jobs found';
+                        topJobsList.appendChild(li);
+                    }
+                    
+                    resultsDisplay.classList.add('show');
+                    showMessage('ANALYSIS_COMPLETE: Spreadsheet generated successfully', 'success', false);
                     submitBtn.textContent = 'ANALYSIS_COMPLETE';
                     
-                    // Reset button text after 3 seconds
-                    setTimeout(() => {
-                        submitBtn.textContent = 'EXECUTE_ANALYSIS';
-                    }, 3000);
+                    // Store spreadsheet path for download
+                    if (data.spreadsheet_path) {
+                        viewSpreadsheetBtn.onclick = () => {
+                            window.open(data.spreadsheet_path, '_blank');
+                        };
+                    }
                 } else {
-                    showMessage(`ERROR: ${data.message || 'System malfunction detected'}`, 'error');
+                    showMessage(`ERROR: ${data.message || 'System malfunction detected'}`, 'error', false);
                     if (data.hint) {
-                        showMessage(`ERROR: ${data.message}\nHINT: ${data.hint}`, 'error');
+                        showMessage(`ERROR: ${data.message}\nHINT: ${data.hint}`, 'error', false);
                     }
                     submitBtn.textContent = 'EXECUTE_ANALYSIS';
                 }
             } catch (error) {
                 clearInterval(statusInterval);
-                showMessage('NETWORK_ERROR: Connection failed. Retry protocol initiated.', 'error');
+                showMessage('NETWORK_ERROR: Connection failed. Retry protocol initiated.', 'error', false);
                 submitBtn.textContent = 'EXECUTE_ANALYSIS';
             } finally {
                 submitBtn.disabled = false;
             }
         });
         
-        function showMessage(text, type) {
+        // Add trace button functionality
+        viewTraceBtn.addEventListener('click', () => {
+            window.open('/trace/', '_blank');
+        });
+        
+        function showMessage(text, type, autoHide = false) {
             messageDiv.textContent = text;
             messageDiv.className = `message ${type} show`;
             
-            setTimeout(() => {
-                messageDiv.classList.remove('show');
-            }, 5000);
+            if (autoHide) {
+                setTimeout(() => {
+                    messageDiv.classList.remove('show');
+                }, 5000);
+            }
+            // If autoHide is false, message stays visible until manually cleared
         }
     </script>
 </body>

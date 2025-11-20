@@ -5,6 +5,8 @@ This module provides a base agent class that can be extended for specific tasks.
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 import re
+from datetime import datetime
+import os
 
 
 class BaseAgent(ABC):
@@ -174,7 +176,7 @@ class ExtractJobPostingInfo(BaseAgent):
     def __init__(self):
         super().__init__(
             name="ExtractJobPostingInfo",
-            description="Filters and extracts job postings that match provided job positions and keywords from JSearch API data"
+            description="Extracts ALL job postings related to or containing the target positions from JSearch API data"
         )
     
     def execute(self, context: Dict[str, Any], orchestrator) -> str:
@@ -224,39 +226,41 @@ Salary: {f"${job['salary_min']:,} - ${job['salary_max']:,} {job['salary_currency
         
         jobs_text = "\n---\n".join(job_summaries)
         
-        keywords_text = job_keywords if job_keywords and job_keywords.strip() and job_keywords != "No specific skills filter" else "No specific skill filters (showing all jobs for the positions)"
+        keywords_text = job_keywords if job_keywords and job_keywords.strip() and job_keywords != "No specific skills filter" else "No specific ranking keywords (all jobs included based on position relevance only)"
         
         prompt = f"""You are analyzing {len(jobs)} real job postings from JSearch API (LinkedIn, Indeed, Monster, etc.).
 
 **Target Positions:** {job_position}
-**Skill Filters:** {keywords_text}
+**Keywords for Ranking:** {keywords_text}
 
 **JSearch Job Postings:**
 {jobs_text}
 
-**Analysis Tasks:**
-1. Evaluate how well each job matches the target positions and keywords
-2. Identify the most relevant jobs (give each a relevance score 1-10)
-3. Highlight key requirements and qualifications across all jobs
-4. Note any common patterns or trending skills
+**Analysis Instructions:**
+1. INCLUDE ALL jobs that are related to or contain elements of the target positions
+2. Do NOT filter out jobs based on keywords - keywords are for ranking only
+3. Provide a brief analysis of each job's relevance to the target positions
+4. Note which jobs have the specified keywords for better ranking later
 
 **Output Format:**
-## JSearch Job Analysis Summary
+## Job Extraction Results - ALL POSITION-RELATED JOBS
 
-**Total Jobs Found:** {len(jobs)}
-**Source:** JSearch API (Real job postings from major job sites)
+**Total Jobs Analyzed:** {len(jobs)}
+**Target Positions:** {job_position}
+**Ranking Keywords:** {keywords_text}
 
-**Top Matching Jobs:**
-[List the 3-5 most relevant jobs with brief explanations]
+**All Position-Related Jobs (to be included in spreadsheet):**
 
-**Common Requirements Across Jobs:**
-[List the most frequently mentioned skills/requirements]
+[For each relevant job, provide:]
+### Job: [Title] at [Company]
+**Position Relevance:** [How it relates to target positions]
+**Keyword Presence:** [Which ranking keywords are mentioned, if any]
+**Brief Summary:** [2-3 sentences about the role]
 
-**Keyword Match Analysis:**
-[How well the jobs match the specified keywords]
-
-**Recommendations:**
-[Brief advice based on the job market data]
+**Jobs Summary:**
+- Total jobs included: [X]
+- Jobs with ranking keywords: [Y]
+- Most common job types: [List]
 """
         
         return orchestrator.query_llm(prompt)
@@ -264,29 +268,41 @@ Salary: {f"${job['salary_min']:,} - ${job['salary_max']:,} {job['salary_currency
     def _process_text_data(self, job_postings: str, job_position: str, job_keywords: str, orchestrator) -> str:
         """Process text-based job posting data (fallback mode)."""
         
-        keywords_text = job_keywords if job_keywords and job_keywords.strip() and job_keywords != "No specific skills filter" else "No specific skill filters (accepting all jobs for the positions)"
+        keywords_text = job_keywords if job_keywords and job_keywords.strip() and job_keywords != "No specific skills filter" else "No ranking keywords (including all position-related jobs)"
         
-        prompt = f"""You are a job filtering system working with job posting text data.
+        prompt = f"""You are a job extraction system working with job posting text data.
 
 **Target Job Positions:** {job_position}
-**Skill Filters:** {keywords_text}
+**Ranking Keywords:** {keywords_text}
 
 **Job Postings Data:**
 {job_postings[:5000]}
 
 **Instructions:**
 1. Review each job posting in the data above
-2. Extract ONLY jobs that match one or more of the target positions
-3. For each job, check if it contains the required keywords or similar/related terms
-4. Return the complete matching job postings in their original format
+2. Extract ALL jobs that are related to or contain elements of the target positions
+3. Do NOT filter out jobs based on keywords - keywords are for ranking assistance only
+4. Include jobs even if they don't have the specified keywords
+5. Return all relevant job postings with position relevance noted
 
-**Matching Rules:**
-- Include jobs with titles similar to the target positions (e.g., "Software Dev" matches "Software Developer")
-- Accept similar keywords (e.g., "ML" matches "Machine Learning", "Python3" matches "Python")
-- If a job matches the position OR contains multiple keywords, include it
+**Inclusion Rules:**
+- Include jobs with titles related to the target positions (e.g., "Frontend Dev", "Backend Engineer" for "Software Developer")
+- Include junior, senior, lead, principal variations
+- Include specialized roles (e.g., "Python Developer", "Full Stack Engineer")
+- Note which jobs contain ranking keywords for later scoring
 
-**Output:**
-Return ONLY the matching job postings. If no jobs match, respond with: "No matching jobs found."
+**Output Format:**
+For each relevant job, provide:
+
+**Job: [Title]**
+Company: [Company]
+Position Relevance: [How it relates to target positions]
+Ranking Keywords Present: [List keywords found, or "None"]
+[Original job details...]
+
+---
+
+If no position-related jobs found, respond with: "No position-related jobs found."
 """
         
         return orchestrator.query_llm(prompt)
@@ -325,28 +341,33 @@ class JobRankingAndAnalysis(BaseAgent):
         
         orchestrator._update_status("Analyzing job fit and relevance...")
         
-        keywords_text = job_keywords if job_keywords and job_keywords.strip() and job_keywords != "No specific skills filter" else "No specific skill filters provided"
+        keywords_text = job_keywords if job_keywords and job_keywords.strip() and job_keywords != "No specific skills filter" else "No ranking keywords provided (scoring based on position match only)"
         
-        prompt = f"""You are an expert career advisor and job matching specialist. Analyze the following information to provide comprehensive job rankings and insights.
+        prompt = f"""You are an expert career advisor and job matching specialist. Analyze ALL the provided job postings to rank them by best fit.
 
         **CANDIDATE PROFILE:**
         Target Position(s): {job_position}
-        Skill Preferences: {keywords_text}
+        Ranking Keywords (for scoring): {keywords_text}
         Resume Content: {resume[:3000]}
 
-        **AVAILABLE JOB POSTINGS:**
+        **ALL AVAILABLE JOB POSTINGS:**
         {filtered_jobs[:4000]}
 
-        **TASK INSTRUCTIONS:**
-        You must provide a comprehensive analysis in the following structured format:
+        **RANKING INSTRUCTIONS:**
+        - Include ALL jobs in your analysis and ranking
+        - Use the ranking keywords to boost scores for jobs that mention them
+        - Jobs without keywords can still rank highly if they match positions well
+        - Rank from best fit to worst fit based on position relevance + keyword presence
 
-        ## JOB RANKINGS (Best to Worst Fit)
+        **REQUIRED OUTPUT FORMAT:**
 
-        For each job, provide:
+        ## JOB RANKINGS (Best to Worst Fit - ALL JOBS INCLUDED)
+
+        For EVERY job, provide:
 
         ### Job #[NUMBER]: [Job Title] at [Company]
-        **Match Score: [X/10]**
-        **Summary:** [2-3 sentence overview of the role and why it matches/doesn't match]
+        **Match Score: [X/10]** (Position relevance: [Y/5] + Keyword bonus: [Z/5])
+        **Summary:** [2-3 sentence overview of the role and fit explanation]
 
         **PROS:**
         - [Specific positive aspects that align with candidate's profile]
@@ -359,6 +380,7 @@ class JobRankingAndAnalysis(BaseAgent):
         - [Areas where candidate might struggle]
 
         **Key Skills Required:** [List 5-8 main technical/soft skills from job posting]
+        **Ranking Keywords Found:** [List any of the specified keywords present]
         **Skills Match:** [Which candidate skills align] / [Which are missing]
 
         ---
@@ -385,6 +407,21 @@ class JobRankingAndAnalysis(BaseAgent):
         
         orchestrator._update_status("Generating job rankings and analysis...")
         result = orchestrator.query_llm(prompt)
+        
+        # DEBUG: Save analysis result for debugging parsing issues
+        debug_analysis_file = "/Users/jamiepeterson/Desktop/example/AI_Slop/exports/debug_analysis_result.txt"
+        if not os.path.exists(debug_analysis_file):
+            try:
+                os.makedirs(os.path.dirname(debug_analysis_file), exist_ok=True)
+                with open(debug_analysis_file, 'w') as f:
+                    f.write(f"DEBUG: AI Analysis Result\n")
+                    f.write(f"Timestamp: {datetime.now()}\n")
+                    f.write(f"Result length: {len(result)} characters\n")
+                    f.write(f"{'='*60}\n\n")
+                    f.write(result)
+                print(f"[DEBUG] Saved analysis result to {debug_analysis_file}")
+            except Exception as e:
+                print(f"[DEBUG] Could not save analysis result: {e}")
         
         # Extract and format skills for future database storage
         skills_extraction_prompt = f"""Based on the job analysis above, extract all unique skills mentioned across all job postings into a clean, structured list for database storage.
@@ -523,11 +560,17 @@ class SpreadsheetExportAgent(BaseAgent):
         Returns:
             str: Status message about spreadsheet export
         """
-        import pandas as pd
-        import re
-        from datetime import datetime
-        import os
+        try:
+            import pandas as pd
+            import re
+            from datetime import datetime
+            import os
+        except ImportError as e:
+            error_msg = f"Required packages not installed: {e}. Run: pip install pandas openpyxl"
+            orchestrator._update_status("Missing dependencies")
+            return f"ERROR: {error_msg}"
         
+        print("[DEBUG] Starting spreadsheet export...")
         orchestrator._update_status("Preparing spreadsheet export...")
         
         try:
@@ -541,12 +584,24 @@ class SpreadsheetExportAgent(BaseAgent):
                 return "No ranking results available for export"
             
             orchestrator._update_status("Parsing job analysis data...")
+            print(f"[DEBUG] Ranking results length: {len(ranking_results)}")
+            print(f"[DEBUG] Raw job data count: {len(raw_job_data)}")
             
             # Parse job rankings from the analysis text
-            jobs_data = self._parse_job_rankings(ranking_results, raw_job_data)
+            try:
+                jobs_data = self._parse_job_rankings(ranking_results, raw_job_data)
+                print(f"[DEBUG] Parsed {len(jobs_data)} jobs")
+            except Exception as e:
+                print(f"[DEBUG] Job parsing failed: {e}")
+                jobs_data = []
             
             # Parse skills data
-            skills_data = self._parse_skills_data(ranking_results)
+            try:
+                skills_data = self._parse_skills_data(ranking_results)
+                print(f"[DEBUG] Parsed {len(skills_data)} skills")
+            except Exception as e:
+                print(f"[DEBUG] Skills parsing failed: {e}")
+                skills_data = []
             
             # Create timestamp for file naming
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -561,35 +616,75 @@ class SpreadsheetExportAgent(BaseAgent):
             filename = f"job_analysis_results_{timestamp}.xlsx"
             filepath = os.path.join(output_dir, filename)
             
+            print(f"[DEBUG] Creating Excel file at: {filepath}")
+            
             with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
-                # Sheet 1: Job Rankings
+                # Sheet 1: MAIN Job Analysis (detailed breakdown - primary purpose)
+                if jobs_data:
+                    job_analysis_data = []
+                    for job in jobs_data:
+                        # Extract detailed job info for the main analysis sheet
+                        job_analysis_data.append({
+                            'Rank': job.get('Rank', 0),
+                            'Job Title': job.get('Job Title', 'Unknown'),
+                            'Company': job.get('Company', 'Unknown'),
+                            'Location': job.get('Location', 'Not specified'),
+                            'Match Score': f"{job.get('Match Score', 0)}/10",
+                            'Salary Range': job.get('Salary Range', 'Not disclosed'),
+                            'Summary': job.get('Summary', 'No summary available'),
+                            'Pros': job.get('Pros', 'See raw analysis'),
+                            'Cons': job.get('Cons', 'See raw analysis'), 
+                            'Key Skills Required': job.get('Key Skills', 'Not specified'),
+                            'Keywords Found': job.get('Keywords Found', 'None'),
+                            'Skills Match': job.get('Skills Match', 'Not analyzed'),
+                            'Apply Link': job.get('Apply Link', 'Not available'),
+                            'Employment Type': job.get('Employment Type', 'Not specified'),
+                            'Remote Available': job.get('Remote', 'Unknown'),
+                            'Experience Level': job.get('Experience Level', 'Not specified')
+                        })
+                    
+                    job_analysis_df = pd.DataFrame(job_analysis_data)
+                    job_analysis_df.to_excel(writer, sheet_name='Job Analysis', index=False)
+                
+                # Sheet 2: Job Rankings (simplified view)
                 if jobs_data:
                     jobs_df = pd.DataFrame(jobs_data)
                     jobs_df.to_excel(writer, sheet_name='Job Rankings', index=False)
                 
-                # Sheet 2: Skills Analysis
+                # Sheet 3: Skills Analysis
                 if skills_data:
                     skills_df = pd.DataFrame(skills_data)
                     skills_df.to_excel(writer, sheet_name='Skills Analysis', index=False)
                 
-                # Sheet 3: Summary
+                # Sheet 4: Summary
                 summary_data = [{
                     'Target Positions': job_position,
-                    'Skill Filter Keywords': job_keywords,
-                    'Search Note': 'Keywords used for skill filtering, not job title matching',
+                    'Ranking Keywords': job_keywords,
+                    'Search Note': 'All position-related jobs included, keywords used for ranking only',
                     'Total Jobs Analyzed': len(jobs_data),
                     'Export Date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     'Top Ranked Job': jobs_data[0]['Job Title'] if jobs_data else 'No jobs found',
-                    'Average Match Score': sum(job.get('Match Score', 0) for job in jobs_data) / len(jobs_data) if jobs_data else 0
+                    'Average Match Score': sum(job.get('Match Score', 0) for job in jobs_data) / len(jobs_data) if jobs_data else 0,
+                    'Jobs with Keywords': len([j for j in jobs_data if j.get('Keywords Found', 'None') != 'None']) if jobs_data else 0
                 }]
                 summary_df = pd.DataFrame(summary_data)
                 summary_df.to_excel(writer, sheet_name='Summary', index=False)
                 
-                # Sheet 4: Raw Analysis Text
+                # Sheet 5: Raw Analysis Text
+                truncated_analysis = ranking_results[:15000] + "..." if len(ranking_results) > 15000 else ranking_results
                 raw_analysis = pd.DataFrame([{
-                    'Complete Analysis': ranking_results
+                    'Complete Analysis': truncated_analysis
                 }])
                 raw_analysis.to_excel(writer, sheet_name='Raw Analysis', index=False)
+            
+            print(f"[DEBUG] Excel file created successfully at: {filepath}")
+            
+            # Verify file exists
+            if os.path.exists(filepath):
+                file_size = os.path.getsize(filepath)
+                print(f"[DEBUG] File verified: {filepath} ({file_size} bytes)")
+            else:
+                print(f"[DEBUG] WARNING: File not found after creation: {filepath}")
             
             orchestrator._update_status("Spreadsheet export completed!")
             
@@ -599,7 +694,8 @@ class SpreadsheetExportAgent(BaseAgent):
 **File Created:** {filename}
 **Location:** {filepath}
 **Sheets Created:**
-- Job Rankings: {len(jobs_data)} jobs with match scores and analysis
+- **Job Analysis**: {len(jobs_data)} jobs with complete breakdown (MAIN SHEET)
+- Job Rankings: Simplified job ranking view
 - Skills Analysis: {len(skills_data)} skills extracted across all jobs
 - Summary: High-level overview and statistics  
 - Raw Analysis: Complete text analysis from AI
@@ -608,6 +704,8 @@ class SpreadsheetExportAgent(BaseAgent):
 - Jobs Analyzed: {len(jobs_data)}
 - Skills Identified: {len(skills_data)}
 - Export Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+**Main Purpose:** The 'Job Analysis' sheet contains the comprehensive breakdown that is the core purpose of this application.
 
 The spreadsheet is ready for review and can be opened in Excel, Google Sheets, or any spreadsheet application.
 """
@@ -630,66 +728,145 @@ The spreadsheet is ready for review and can be opened in Excel, Google Sheets, o
         """
         jobs = []
         
-        # Look for job entries in the analysis
-        job_sections = re.split(r'### Job #\d+:', analysis_text)
+        try:
+            # Look for job entries in the analysis with improved patterns
+            job_sections = []
+            
+            # Try multiple patterns to find job sections
+            patterns = [
+                r'### Job #\[\d+\]:',  # New format: ### Job #[1]:
+                r'### Job #\d+:',      # Old format: ### Job #1:
+                r'### Job \d+:',       # Alternative: ### Job 1:
+                r'## Job #?\d+',       # Fallback patterns
+                r'\*\*Job \d+\*\*'
+            ]
+            
+            best_sections = []
+            best_count = 0
+            
+            for pattern in patterns:
+                sections = re.split(pattern, analysis_text)
+                print(f"[DEBUG] Pattern '{pattern}' found {len(sections)-1} sections")
+                if len(sections) > best_count:
+                    best_sections = sections
+                    best_count = len(sections)
+            
+            job_sections = best_sections
+            print(f"[DEBUG] Using best pattern with {len(job_sections)-1} job sections")
+            print(f"[DEBUG] Analysis text length: {len(analysis_text)}")
+            print(f"[DEBUG] First 300 chars of analysis: {analysis_text[:300]}...")
+            
+            for i, section in enumerate(job_sections[1:], 1):  # Skip first empty split
+                if i > 10:  # Safety limit to prevent infinite loops
+                    print(f"[DEBUG] Limiting to first 10 jobs")
+                    break
+                    
+                try:
+                    # Extract job title and company
+                    lines = section.split('\n')
+                    first_line = lines[0].strip() if lines else f"Job {i}"
+                    
+                    # Try different patterns for title and company extraction
+                    title_match = re.search(r'^([^at]+?)\s+at\s+(.+?)$', first_line)
+                    if not title_match:
+                        # Try pattern without " at " separator
+                        title_match = re.search(r'^(.+?)\s+(.+?)$', first_line)
+                    
+                    if title_match and ' at ' in first_line:
+                        parts = first_line.split(' at ', 1)
+                        job_title = parts[0].strip()
+                        company = parts[1].strip()
+                    elif title_match:
+                        job_title = title_match.group(1).strip()
+                        company = title_match.group(2).strip() if len(title_match.groups()) > 1 else "Unknown Company"
+                    else:
+                        job_title = first_line[:50] if len(first_line) > 50 else first_line
+                        company = "Unknown Company"
+                    
+                    # Extract match score
+                    score_match = re.search(r'\*\*Match Score:\s*(\d+)/10\*\*', section)
+                    match_score = int(score_match.group(1)) if score_match else 0
+                    
+                    # Extract summary
+                    summary_match = re.search(r'\*\*Summary:\*\*\s*([^\n]+)', section)
+                    summary = summary_match.group(1)[:200] if summary_match else f"Analysis for {job_title}"
+                    
+                    # Extract pros and cons with better parsing
+                    pros_match = re.search(r'\*\*PROS:\*\*\s*(.*?)\*\*CONS:\*\*', section, re.DOTALL)
+                    pros = pros_match.group(1).strip() if pros_match else "See Raw Analysis sheet for details"
+                    
+                    cons_match = re.search(r'\*\*CONS:\*\*\s*(.*?)\*\*', section, re.DOTALL)  
+                    cons = cons_match.group(1).strip() if cons_match else "See Raw Analysis sheet for details"
+                    
+                    # Extract key skills
+                    skills_match = re.search(r'\*\*Key Skills Required:\*\*\s*([^\n]+)', section)
+                    key_skills = skills_match.group(1).strip() if skills_match else "Not specified"
+                    
+                    # Extract ranking keywords found
+                    keywords_match = re.search(r'\*\*Ranking Keywords Found:\*\*\s*([^\n]+)', section)
+                    if not keywords_match:
+                        keywords_match = re.search(r'\*\*Skills Match:\*\*\s*([^\n/]+)', section)
+                    keywords_found = keywords_match.group(1).strip() if keywords_match else "None"
+                    
+                    # Extract skills match
+                    skills_match_text = re.search(r'\*\*Skills Match:\*\*\s*([^\n]+)', section)
+                    skills_match_info = skills_match_text.group(1).strip() if skills_match_text else "Not analyzed"
+                    
+                    # Try to match with raw job data for additional info
+                    location = ""
+                    salary = ""
+                    apply_link = ""
+                    employment_type = ""
+                    remote = ""
+                    
+                    if raw_job_data and i <= len(raw_job_data):
+                        raw_job = raw_job_data[i-1]
+                        location = raw_job.get('location', '')
+                        employment_type = raw_job.get('employment_type', '')
+                        remote = "Yes" if raw_job.get('is_remote', False) else "No"
+                        if raw_job.get('salary_min') and raw_job.get('salary_max'):
+                            salary = f"${raw_job['salary_min']:,} - ${raw_job['salary_max']:,}"
+                        apply_link = raw_job.get('apply_link', '')
+                    
+                    jobs.append({
+                        'Rank': i,
+                        'Job Title': job_title,
+                        'Company': company,
+                        'Match Score': match_score,
+                        'Location': location,
+                        'Salary Range': salary,
+                        'Employment Type': employment_type,
+                        'Remote': remote,
+                        'Summary': summary,
+                        'Pros': pros[:500] + "..." if len(pros) > 500 else pros,  # Limit length for Excel
+                        'Cons': cons[:500] + "..." if len(cons) > 500 else cons,
+                        'Key Skills': key_skills,
+                        'Keywords Found': keywords_found,
+                        'Skills Match': skills_match_info,
+                        'Apply Link': apply_link
+                    })
+                    
+                    print(f"[DEBUG] Parsed job {i}: {job_title}")
+                    
+                except Exception as e:
+                    print(f"[DEBUG] Error parsing job {i}: {e}")
+                    continue
         
-        for i, section in enumerate(job_sections[1:], 1):  # Skip first empty split
-            try:
-                # Extract job title and company
-                title_match = re.search(r'^([^at]+?)\s+at\s+(.+?)$', section.split('\n')[0].strip())
-                if title_match:
-                    job_title = title_match.group(1).strip()
-                    company = title_match.group(2).strip()
-                else:
-                    job_title = f"Job {i}"
-                    company = "Unknown Company"
-                
-                # Extract match score
-                score_match = re.search(r'\*\*Match Score:\s*(\d+)/10\*\*', section)
-                match_score = int(score_match.group(1)) if score_match else 0
-                
-                # Extract summary
-                summary_match = re.search(r'\*\*Summary:\*\*\s*([^\n]+)', section)
-                summary = summary_match.group(1) if summary_match else ""
-                
-                # Extract pros and cons
-                pros_section = re.search(r'\*\*PROS:\*\*(.*?)\*\*CONS:\*\*', section, re.DOTALL)
-                pros = pros_section.group(1).strip() if pros_section else ""
-                
-                cons_section = re.search(r'\*\*CONS:\*\*(.*?)(\*\*|$)', section, re.DOTALL)
-                cons = cons_section.group(1).strip() if cons_section else ""
-                
-                # Try to match with raw job data for additional info
-                location = ""
-                salary = ""
-                apply_link = ""
-                
-                if raw_job_data:
-                    # Find matching job in raw data (simplified matching)
-                    for raw_job in raw_job_data:
-                        if any(word in raw_job.get('title', '').lower() for word in job_title.lower().split()[:2]):
-                            location = raw_job.get('location', '')
-                            if raw_job.get('salary_min') and raw_job.get('salary_max'):
-                                salary = f"${raw_job['salary_min']:,} - ${raw_job['salary_max']:,}"
-                            apply_link = raw_job.get('apply_link', '')
-                            break
-                
-                jobs.append({
-                    'Rank': i,
-                    'Job Title': job_title,
-                    'Company': company,
-                    'Match Score': match_score,
-                    'Location': location,
-                    'Salary Range': salary,
-                    'Summary': summary,
-                    'Pros': pros.replace('- ', '').replace('\n', ' | '),
-                    'Cons': cons.replace('- ', '').replace('\n', ' | '),
-                    'Apply Link': apply_link
-                })
-                
-            except Exception as e:
-                print(f"Error parsing job {i}: {e}")
-                continue
+        except Exception as e:
+            print(f"[DEBUG] Job parsing error: {e}")
+            # Return at least one job entry to prevent empty sheets
+            jobs = [{
+                'Rank': 1,
+                'Job Title': 'Analysis Available',
+                'Company': 'See Raw Analysis',
+                'Match Score': 0,
+                'Location': '',
+                'Salary Range': '',
+                'Summary': 'Job data available in Raw Analysis sheet',
+                'Pros': 'See Raw Analysis sheet',
+                'Cons': 'See Raw Analysis sheet',
+                'Apply Link': ''
+            }]
         
         return jobs
     
@@ -741,9 +918,17 @@ The spreadsheet is ready for review and can be opened in Excel, Google Sheets, o
                         })
         
         except Exception as e:
-            print(f"Error parsing skills: {e}")
+            print(f"[DEBUG] Skills parsing error: {e}")
+            # Return minimal skills data to avoid complete failure
+            skills = [{
+                'Skill': 'Analysis Available',
+                'Frequency': 1,
+                'Category': 'See Raw Analysis',
+                'Demand Level': 'N/A'
+            }]
         
         # Sort by frequency descending
-        skills.sort(key=lambda x: x['Frequency'], reverse=True)
+        if skills:
+            skills.sort(key=lambda x: x.get('Frequency', 0), reverse=True)
         
         return skills

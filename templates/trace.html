@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Job Assistant - Trace Dashboard</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0f0f;
+            background-image: 
+                radial-gradient(circle at 20% 80%, rgba(0, 191, 255, 0.25) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(0, 255, 127, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(0, 150, 200, 0.1) 0%, transparent 50%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 20px;
+            position: relative;
+            overflow-x: hidden;
+            color: #ccd6f6;
+            line-height: 1.6;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='%23333'%3e%3cpath d='m0 2 l30 30 m0 -30 l-30 30'/%3e%3c/svg%3e") repeat;
+            opacity: 0.03;
+            pointer-events: none;
+        }
+        
+        .trace-container {
+            background: rgba(16, 24, 24, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 40px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 191, 255, 0.2);
+            box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            max-width: 1200px;
+            width: 100%;
+            position: relative;
+        }
+        
+        .trace-container::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, 
+                transparent,
+                rgba(0, 191, 255, 0.4) 50%,
+                transparent
+            );
+            border-radius: 16px;
+            z-index: -1;
+            animation: borderGlow 3s ease-in-out infinite alternate;
+        }
+        
+        @keyframes borderGlow {
+            0% { opacity: 0.3; }
+            100% { opacity: 0.7; }
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 35px;
+        }
+        
+        .header h1 {
+            color: #ffffff;
+            margin-bottom: 10px;
+            font-size: 32px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            background: linear-gradient(135deg, #00bfff, #00ff7f);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 20px rgba(0, 191, 255, 0.5);
+        }
+        
+        .header .subtitle {
+            color: #8892b0;
+            margin-bottom: 25px;
+            font-size: 15px;
+            font-weight: 400;
+            font-family: 'JetBrains Mono', monospace;
+            opacity: 0.8;
+        }
+        
+        .refresh-btn {
+            background: linear-gradient(135deg, #191970 0%, #00ff7f 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            margin: 10px 5px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .refresh-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+        
+        .refresh-btn:hover::before {
+            left: 100%;
+        }
+        
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 
+                0 10px 30px rgba(25, 25, 112, 0.6),
+                0 0 20px rgba(0, 255, 127, 0.3);
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-box {
+            background: rgba(65, 105, 225, 0.1);
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00ff7f;
+        }
+        
+        .stat-label {
+            color: #8892b0;
+            font-size: 12px;
+        }
+        
+        .trace-entry {
+            background: rgba(10, 25, 47, 0.8);
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            border-left: 4px solid;
+            font-size: 12px;
+        }
+        
+        .trace-entry.success {
+            border-left-color: #00ff7f;
+        }
+        
+        .trace-entry.error {
+            border-left-color: #ff6b35;
+        }
+        
+        .trace-header {
+            color: #4169e1;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .trace-detail {
+            color: #8892b0;
+            margin: 5px 0;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #00bfff;
+            font-size: 16px;
+        }
+        
+        .error-message {
+            background: rgba(255, 107, 53, 0.1);
+            color: #ff6b35;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        
+        .debug-info {
+            background: rgba(100, 100, 100, 0.1);
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #8892b0;
+            margin-bottom: 20px;
+        }
+        
+        .collapsible {
+            background: rgba(65, 105, 225, 0.2);
+            color: #ccd6f6;
+            cursor: pointer;
+            padding: 8px;
+            margin: 5px 0;
+            border: none;
+            text-align: left;
+            outline: none;
+            font-size: 11px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        
+        .collapsible:hover {
+            background: rgba(65, 105, 225, 0.3);
+        }
+        
+        .collapsible.active {
+            background: rgba(65, 105, 225, 0.4);
+        }
+        
+        .collapsible:after {
+            content: '▼';
+            color: #00ff7f;
+            font-weight: bold;
+            float: right;
+            margin-left: 5px;
+        }
+        
+        .collapsible.active:after {
+            content: '▲';
+        }
+        
+        .content {
+            padding: 0 8px;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        
+        .content.active {
+            max-height: 300px;
+            padding: 10px 8px;
+            overflow-y: auto;
+        }
+        
+        .prompt-content, .response-content {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: #8892b0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        
+        .prompt-content {
+            border-left: 3px solid #4169e1;
+            padding-left: 8px;
+        }
+        
+        .response-content {
+            border-left: 3px solid #00ff7f;
+            padding-left: 8px;
+        }
+        
+        /* Terminal-style scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: rgba(16, 16, 24, 0.5);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(65, 105, 225, 0.4);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(65, 105, 225, 0.6);
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .trace-container {
+                margin: 10px;
+                padding: 25px;
+            }
+            
+            .header h1 {
+                font-size: 24px;
+            }
+            
+            .stats {
+                grid-template-columns: 1fr;
+            }
+            
+            .refresh-btn {
+                padding: 10px 16px;
+                font-size: 12px;
+                margin: 5px 3px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="trace-container">
+        <div class="header">
+            <h1>AI Agent Tracer</h1>
+            <p class="subtitle">> Real-time workflow monitoring system</p>
+            <button class="refresh-btn" onclick="loadTraceData()">🔄 Refresh</button>
+            <button class="refresh-btn" onclick="toggleAutoRefresh()">⏰ Auto-Refresh: <span id="autoStatus">ON</span></button>
+        </div>
+        
+        <div id="statsSection" class="stats" style="display: none;">
+            <div class="stat-box">
+                <div class="stat-number" id="totalTraces">0</div>
+                <div class="stat-label">Total Traces</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="avgTime">0ms</div>
+                <div class="stat-label">Avg Execution Time</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="successRate">0%</div>
+                <div class="stat-label">Success Rate</div>
+            </div>
+        </div>
+        
+        <div id="traceData" class="loading">Loading trace data...</div>
+    </div>
+    
+    <script>
+        let autoRefreshEnabled = true;
+        let refreshInterval;
+        
+        async function loadTraceData() {
+            try {
+                const response = await fetch('/trace/api/');
+                const data = await response.json();
+                
+                const traceDiv = document.getElementById('traceData');
+                const statsSection = document.getElementById('statsSection');
+                
+                if (data.error) {
+                    traceDiv.innerHTML = `<div class="error-message">Error: ${data.error}</div>`;
+                    
+                    if (data.debug_info) {
+                        traceDiv.innerHTML += `<div class="debug-info">Debug Info: ${JSON.stringify(data.debug_info, null, 2)}</div>`;
+                    }
+                } else {
+                    // Update stats
+                    if (data.metrics) {
+                        document.getElementById('totalTraces').textContent = data.metrics.total_traces || 0;
+                        document.getElementById('avgTime').textContent = `${data.metrics.avg_execution_time_ms || 0}ms`;
+                        document.getElementById('successRate').textContent = `${data.metrics.success_rate || 0}%`;
+                        statsSection.style.display = 'grid';
+                    }
+                    
+                    // Show traces
+                    let html = `<h3>Recent Traces (${data.traces ? data.traces.length : 0} entries)</h3>`;
+                    
+                    if (data.debug_info) {
+                        html += `<div class="debug-info">Using: ${data.debug_info.model_used || 'Unknown'}</div>`;
+                    }
+                    
+                    if (data.traces && data.traces.length > 0) {
+                        data.traces.forEach((trace, index) => {
+                            const entryClass = trace.status === 'success' || trace.status === true ? 'success' : 'error';
+                            const promptId = `prompt-${index}`;
+                            const responseId = `response-${index}`;
+                            
+                            html += `
+                                <div class="trace-entry ${entryClass}">
+                                    <div class="trace-header">
+                                        ${trace.agent_name} - ${new Date(trace.timestamp).toLocaleString()}
+                                    </div>
+                                    <div class="trace-detail"><strong>Session:</strong> ${trace.session_id}</div>
+                                    <div class="trace-detail"><strong>Job:</strong> ${trace.job_position}</div>
+                                    <div class="trace-detail"><strong>Keywords:</strong> ${trace.keywords}</div>
+                                    <div class="trace-detail"><strong>Execution Time:</strong> ${trace.execution_time_ms}ms</div>
+                                    <div class="trace-detail"><strong>Provider:</strong> ${trace.llm_provider}</div>
+                                    ${trace.error_message ? `<div class="trace-detail" style="color: #ff6b35;"><strong>Error:</strong> ${trace.error_message}</div>` : ''}
+                                    
+                                    ${trace.prompt_preview ? `
+                                        <button class="collapsible" onclick="toggleContent('${promptId}')">
+                                            📝 View Prompt (${trace.prompt_preview.length} chars)
+                                        </button>
+                                        <div id="${promptId}" class="content">
+                                            <div class="prompt-content">${trace.prompt_preview}</div>
+                                        </div>
+                                    ` : ''}
+                                    
+                                    ${trace.response_preview ? `
+                                        <button class="collapsible" onclick="toggleContent('${responseId}')">
+                                            🤖 View Response (${trace.response_preview.length} chars)
+                                        </button>
+                                        <div id="${responseId}" class="content">
+                                            <div class="response-content">${trace.response_preview}</div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `;
+                        });
+                    } else {
+                        html += '<div class="trace-entry"><div class="trace-detail">No traces found. Execute a job search to see traces here.</div></div>';
+                    }
+                    
+                    traceDiv.innerHTML = html;
+                }
+                
+            } catch (error) {
+                document.getElementById('traceData').innerHTML = 
+                    `<div class="error-message">Failed to load trace data: ${error.message}</div>`;
+            }
+        }
+        
+        function toggleAutoRefresh() {
+            autoRefreshEnabled = !autoRefreshEnabled;
+            document.getElementById('autoStatus').textContent = autoRefreshEnabled ? 'ON' : 'OFF';
+            
+            if (autoRefreshEnabled) {
+                refreshInterval = setInterval(loadTraceData, 10000); // Refresh every 10 seconds
+            } else {
+                clearInterval(refreshInterval);
+            }
+        }
+        
+        // Toggle collapsible content
+        function toggleContent(contentId) {
+            const content = document.getElementById(contentId);
+            const button = content.previousElementSibling;
+            
+            if (content.classList.contains('active')) {
+                content.classList.remove('active');
+                button.classList.remove('active');
+            } else {
+                content.classList.add('active');
+                button.classList.add('active');
+            }
+        }
+        
+        // Initial load
+        loadTraceData();
+        
+        // Start auto-refresh
+        refreshInterval = setInterval(loadTraceData, 10000);
+    </script>
+</body>
+</html>

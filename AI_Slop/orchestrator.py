@@ -1,35 +1,38 @@
 """
 Orchestrator for managing AI agent workflows.
-This module coordinates calls to the local LLM and manages agent interactions.
+This module coordinates calls to the LLM and manages agent interactions.
 Based on the system architecture diagram with UI -> Service -> AI Orchestrator -> Agents workflow.
 
-CLOUD LLM SETUP:
-Currently configured to use Groq's free tier for traveling/remote work.
-To switch back to local Ollama:
-1. Comment out the Groq imports and query_groq function
-2. Uncomment the Ollama import: from AI_Slop.ollama_client import query_ollama
-3. In query_llm method, replace query_groq call with query_ollama call
-4. Make sure Ollama is running locally: ollama serve
-"""
-# LOCAL OLLAMA (commented out for cloud usage)
-# from AI_Slop.ollama_client import query_ollama
+LANGCHAIN UNIFIED LLM SETUP:
+Now uses LangChain for unified LLM provider switching.
+Switch providers via environment variable:
+- LLM_PROVIDER=groq (default) - Groq Cloud API 
+- LLM_PROVIDER=ollama - Local Ollama
 
-# CLOUD LLM - GROQ (current active setup)
+No code changes needed to switch providers!
+"""
 import os
 from typing import Dict, Any, List, Optional
 import json
 import re
+import time
+import uuid
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
+# LangChain Unified LLM Client
+from AI_Slop.llm_client import UnifiedLLMClient
+
+# Import tracing with fallback
 try:
-    from groq import Groq
-    GROQ_AVAILABLE = True
+    from .tracing import AgentTracer, TracingContextManager
+    TRACING_AVAILABLE = True
 except ImportError:
-    GROQ_AVAILABLE = False
-    print("WARNING: Groq not installed. Run: pip install groq")
+    TRACING_AVAILABLE = False
+    print("[DEBUG] Tracing not available - running without trace logging")
 
 
 class Orchestrator:
@@ -53,10 +56,10 @@ class Orchestrator:
     
     def __init__(self, model: str = "llama3"):
         """
-        Initialize the orchestrator with a specific model.
+        Initialize the orchestrator with unified LLM client.
         
         Args:
-            model: The name of the Ollama model to use (default: llama3)
+            model: The model name (used for backward compatibility)
         """
         self.model = model
         self.agents = []
@@ -64,6 +67,23 @@ class Orchestrator:
         self.status_callback = None
         self.job_data_cache = {}  # Cache for consistent job data across agents
         self.skills_database = []  # In-memory skills storage until DB implementation
+        
+        # Initialize tracing
+        if TRACING_AVAILABLE:
+            self.tracer = AgentTracer()
+        else:
+            self.tracer = None
+        
+        # Initialize unified LLM client with LangChain
+        try:
+            self.llm_client = UnifiedLLMClient()
+            provider_info = self.llm_client.get_provider_info()
+            print(f"[ORCHESTRATOR] Using {provider_info['provider'].upper()} LLM provider")
+            if not provider_info['available']:
+                print(f"[ORCHESTRATOR] Warning: LLM provider not fully available - {provider_info.get('error')}")
+        except Exception as e:
+            print(f"[ORCHESTRATOR] LLM client initialization failed: {e}")
+            self.llm_client = None
     
     def set_status_callback(self, callback):
         """Set a callback function to update status messages."""
@@ -85,13 +105,13 @@ class Orchestrator:
     
     def query_llm(self, prompt: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
-        Query the LLM with a prompt and optional context.
-        Currently using Groq cloud API for remote work compatibility.
+        Query the LLM using unified LangChain interface.
         
-        TO SWITCH BACK TO LOCAL OLLAMA:
-        1. Make sure Ollama is running: ollama serve
-        2. Replace the return statement below with: return query_ollama(self.model, enhanced_prompt)
-        3. Uncomment the ollama import at the top of this file
+        Provider switching handled automatically via LLM_PROVIDER environment variable:
+        - LLM_PROVIDER=groq (default) - Uses Groq Cloud API
+        - LLM_PROVIDER=ollama - Uses local Ollama
+        
+        No code changes needed to switch providers!
         
         Args:
             prompt: The prompt to send to the LLM
@@ -100,6 +120,9 @@ class Orchestrator:
         Returns:
             str: The LLM's response
         """
+        if not self.llm_client:
+            return "ERROR: LLM client not initialized. Please check your configuration."
+        
         if context:
             # Enhance prompt with context
             context_str = self._format_context(context)
@@ -107,11 +130,8 @@ class Orchestrator:
         else:
             enhanced_prompt = prompt
         
-        # CURRENT: Using Groq cloud API
-        return query_groq(self.model, enhanced_prompt)
-        
-        # TO SWITCH BACK TO OLLAMA: Replace above line with:
-        # return query_ollama(self.model, enhanced_prompt)
+        # Single unified interface - works with both Groq and Ollama!
+        return self.llm_client.query(enhanced_prompt)
     
     def _format_context(self, context: Dict[str, Any]) -> str:
         """
@@ -145,6 +165,16 @@ class Orchestrator:
         # Step 1: Validate and normalize input data for consistency
         normalized_data = self._normalize_input_data(job_data)
         
+        # Start tracing session if available
+        session = None
+        session_id = str(uuid.uuid4())[:8]  # Simple session ID for tracing
+        
+        if self.tracer:
+            session = self.tracer.start_session(
+                job_position=normalized_data.get('job_position', 'Unknown'),
+                job_keywords=normalized_data.get('job_keywords', '')
+            )
+        
         # Cache normalized data for agent consistency
         self.job_data_cache = normalized_data
         
@@ -154,7 +184,8 @@ class Orchestrator:
             "workflow_stages": {},
             "final_recommendations": {},
             "skills_extracted": [],
-            "data_consistency_log": []
+            "data_consistency_log": [],
+            "llm_provider_info": self.get_llm_provider_info()
         }
         
         # Step 2: Execute Job Site API Integration
@@ -181,9 +212,11 @@ class Orchestrator:
             agent1_result = self._execute_agent_with_validation("ExtractJobPostingInfo", {
                 **normalized_data,
                 "job_postings": raw_job_postings
-            })
+            }, session_id)
             results["workflow_stages"]["job_extraction"] = agent1_result
             self.context["filtered_jobs"] = agent1_result
+            # Store result with proper key name for JobRankingAndAnalysisAgent
+            self.context["ExtractJobPostingInfo_result"] = agent1_result
         else:
             results["workflow_stages"]["job_extraction"] = "Agent not registered"
         
@@ -194,7 +227,7 @@ class Orchestrator:
             agent3_result = self._execute_agent_with_validation("JobRankingAndAnalysisAgent", {
                 **normalized_data,
                 **self.context
-            })
+            }, session_id)
             results["workflow_stages"]["job_ranking"] = agent3_result
             
             # Store result in context for spreadsheet export
@@ -213,7 +246,7 @@ class Orchestrator:
             export_result = self._execute_agent_with_validation("SpreadsheetExportAgent", {
                 **normalized_data,
                 **self.context
-            })
+            }, session_id)
             results["workflow_stages"]["spreadsheet_export"] = export_result
         else:
             results["workflow_stages"]["spreadsheet_export"] = "SpreadsheetExportAgent not registered"
@@ -315,9 +348,9 @@ and suggest improvements."""
         """Check if an agent with the given name is registered."""
         return any(agent.name == agent_name for agent in self.agents)
     
-    def _execute_agent_with_validation(self, agent_name: str, context: Dict[str, Any]) -> str:
+    def _execute_agent_with_validation(self, agent_name: str, context: Dict[str, Any], session_id: str = None) -> str:
         """
-        Execute an agent with input/output validation for consistency.
+        Execute an agent with input/output validation and tracing.
         
         Args:
             agent_name: Name of the agent to execute
@@ -333,13 +366,78 @@ and suggest improvements."""
         # Pre-execution validation
         self._validate_agent_input(agent_name, context)
         
-        # Execute agent
-        result = agent.execute(context, self)
+        # Extract prompt for tracing
+        prompt_preview = self._extract_agent_prompt(agent, context)
+        
+        # Simple trace logging
+        start_time = time.time()
+        success = True
+        error_msg = ""
+        
+        try:
+            # Execute agent with tracing if available
+            if self.tracer and TRACING_AVAILABLE:
+                with TracingContextManager(
+                    tracer=self.tracer,
+                    agent_name=agent_name,
+                    prompt=prompt_preview,
+                    context=context,
+                    llm_provider=getattr(self.llm_client, 'provider', 'unknown')
+                ) as trace_ctx:
+                    result = agent.execute(context, self)
+                    trace_ctx.set_response(result)
+            else:
+                result = agent.execute(context, self)
+                
+        except Exception as e:
+            success = False
+            error_msg = str(e)
+            result = f"Agent execution failed: {e}"
+            
+        finally:
+            # Log to TraceEntry model
+            execution_time = int((time.time() - start_time) * 1000)
+            try:
+                from .models import TraceEntry
+                TraceEntry.objects.create(
+                    session_id=session_id,
+                    agent_name=agent_name,
+                    job_position=context.get('job_position', ''),
+                    keywords=context.get('job_keywords', ''),
+                    prompt_preview=str(prompt_preview)[:500],
+                    response_preview=str(result)[:500],
+                    success=success,
+                    error_message=error_msg,
+                    execution_time_ms=execution_time,
+                    llm_provider=getattr(self.llm_client, 'provider', 'unknown'),
+                    prompt_hash=str(hash(str(prompt_preview))),
+                    token_count=len(str(prompt_preview).split()) + len(str(result).split())
+                )
+            except Exception as trace_error:
+                print(f"[DEBUG] Trace logging failed: {trace_error}")
         
         # Post-execution validation
         validated_result = self._validate_agent_output(agent_name, result, context)
         
         return validated_result
+    
+    def _extract_agent_prompt(self, agent, context: Dict[str, Any]) -> str:
+        """
+        Extract the prompt that will be sent to the LLM for tracing purposes.
+        """
+        try:
+            # Try to get prompt from agent if it has a method to build prompts
+            if hasattr(agent, '_build_prompt'):
+                return agent._build_prompt(context)
+            elif hasattr(agent, 'prompt_template'):
+                return agent.prompt_template.format(**context)
+            else:
+                # Generic prompt reconstruction
+                job_position = context.get('job_position', 'Unknown')
+                job_keywords = context.get('job_keywords', 'None')
+                return f"Agent: {agent.name}\nPosition: {job_position}\nKeywords: {job_keywords}"
+        except Exception as e:
+            return f"Agent {agent.name} execution (prompt extraction failed: {str(e)})"
     
     def _validate_agent_input(self, agent_name: str, context: Dict[str, Any]) -> None:
         """Validate that agent receives consistent input data."""
@@ -432,6 +530,37 @@ and suggest improvements."""
             
             # Store raw job data for later use by agents
             self.context["raw_job_data"] = jobs
+            
+            # DEBUGGING: Save job data to file for analysis (only once)
+            debug_file = "/Users/jamiepeterson/Desktop/example/AI_Slop/exports/debug_jobs_data.txt"
+            if not os.path.exists(debug_file):
+                try:
+                    os.makedirs(os.path.dirname(debug_file), exist_ok=True)
+                    with open(debug_file, 'w') as f:
+                        f.write(f"DEBUG: Job Search Results\n")
+                        f.write(f"API returned: {len(jobs)} jobs\n")
+                        f.write(f"Position: {positions}\n")
+                        f.write(f"Keywords: {keywords}\n")
+                        f.write(f"Timestamp: {datetime.now()}\n")
+                        f.write(f"{'='*60}\n\n")
+                        
+                        for i, job in enumerate(jobs[:5], 1):  # Save first 5 jobs for analysis
+                            f.write(f"Job {i}:\n")
+                            f.write(f"Title: {job.get('title', 'N/A')}\n")
+                            f.write(f"Company: {job.get('company', 'N/A')}\n")
+                            f.write(f"Location: {job.get('location', 'N/A')}\n")
+                            f.write(f"Description: {job.get('description', 'N/A')[:200]}...\n")
+                            f.write(f"Required Skills: {job.get('required_skills', 'N/A')}\n")
+                            f.write(f"Apply Link: {job.get('apply_link', 'N/A')}\n")
+                            f.write(f"-"*40 + "\n\n")
+                        
+                        f.write(f"\nFormatted Jobs Text (first 1000 chars):\n")
+                        f.write(f"{'='*60}\n")
+                        f.write(formatted_jobs[:1000] + "...")
+                    
+                    print(f"[DEBUG] Saved job data to {debug_file}")
+                except Exception as e:
+                    print(f"[DEBUG] Could not save job data: {e}")
             
             self._update_status(f"Found {len(jobs)} relevant job postings")
             
@@ -561,54 +690,70 @@ and suggest improvements."""
     def _log_consistency_issue(self, issue: str):
         """Log a data consistency issue for debugging."""
         print(f"[CONSISTENCY WARNING] {issue}")  # TODO: Use proper logging system
-
-def query_groq(model: str, prompt: str) -> str:
-    """
-    Query Groq's free tier API as cloud alternative to Ollama.
     
-    SETUP INSTRUCTIONS:
-    1. Sign up at https://console.groq.com/
-    2. Get your free API key (6,000 requests/day)
-    3. Set environment variable: export GROQ_API_KEY="your-key-here"
-    4. Install Groq: pip install groq
-    
-    Args:
-        model: Model name (groq uses different model names than ollama)
-        prompt: The prompt to send
+    def validate_llm_setup(self) -> Dict[str, Any]:
+        """
+        Validate that LLM setup is working properly.
         
-    Returns:
-        str: The response from Groq
-    """
-    if not GROQ_AVAILABLE:
-        return "ERROR: Groq not installed. Run: pip install groq"
-    
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        return "ERROR: GROQ_API_KEY environment variable not set. Get your free key from https://console.groq.com/"
-    
-    try:
-        client = Groq(api_key=api_key)
-        
-        # Map Ollama model names to Groq model names (updated for current models)
-        model_mapping = {
-            "llama3": "llama-3.1-8b-instant",  # Updated model name
-            "llama2": "llama-3.1-70b-versatile",  # Updated model name
-            "mixtral": "mixtral-8x7b-32768",
-            "gemma": "gemma-7b-it"
+        Returns:
+            Dict containing validation results
+        """
+        validation = {
+            "llm_client_initialized": self.llm_client is not None,
+            "provider_info": {},
+            "test_query_successful": False,
+            "recommendations": []
         }
         
-        groq_model = model_mapping.get(model, "llama3-8b-8192")
+        if self.llm_client:
+            # Get provider info
+            provider_info = self.llm_client.get_provider_info()
+            validation["provider_info"] = provider_info
+            
+            if provider_info["available"]:
+                # Test a simple query
+                try:
+                    test_response = self.llm_client.query("Hello! Please respond with 'LLM test successful'")
+                    validation["test_query_successful"] = "successful" in test_response.lower()
+                    validation["test_response"] = test_response[:100]
+                except Exception as e:
+                    validation["test_error"] = str(e)
+            else:
+                validation["recommendations"].append(f"Check {provider_info['provider'].upper()} configuration: {provider_info.get('error')}")
+        else:
+            validation["recommendations"].append("LLM client failed to initialize - check LangChain installation")
         
-        response = client.chat.completions.create(
-            model=groq_model,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=4000,
-            temperature=0.7
-        )
+        return validation
+
+    def get_llm_provider_info(self) -> Dict[str, Any]:
+        """
+        Get information about the current LLM provider.
         
-        return response.choices[0].message.content
+        Returns:
+            Dict containing provider information and status
+        """
+        if not self.llm_client:
+            return {"provider": "none", "available": False, "error": "LLM client not initialized"}
         
-    except Exception as e:
-        return f"Groq API Error: {str(e)}. Check your API key and internet connection."
+        return self.llm_client.get_provider_info()
+    
+    def switch_llm_provider(self, provider: str) -> bool:
+        """
+        Switch LLM provider at runtime.
+        
+        Args:
+            provider: "groq" or "ollama"
+            
+        Returns:
+            bool: True if switch successful, False otherwise
+        """
+        if not self.llm_client:
+            return False
+        
+        try:
+            self.llm_client.switch_provider(provider)
+            print(f"[ORCHESTRATOR] Switched to {provider.upper()} provider")
+            return True
+        except Exception as e:
+            print(f"[ORCHESTRATOR] Failed to switch to {provider}: {e}")
+            return False
