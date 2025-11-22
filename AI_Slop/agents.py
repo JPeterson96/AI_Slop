@@ -179,33 +179,22 @@ class ExtractJobPostingInfo(BaseAgent):
             description="Extracts ALL job postings related to or containing the target positions from JSearch API data"
         )
     
-    def execute(self, context: Dict[str, Any], orchestrator) -> str:
-        """
-        Extract and analyze job postings from JSearch API data.
-        
-        Args:
-            context: Dictionary containing job_position, job_keywords, job_postings, and raw_job_data
-            orchestrator: Reference to the orchestrator for LLM queries
-            
-        Returns:
-            str: Analysis and filtering of job postings
-        """
+    def _build_prompt(self, context: Dict[str, Any]) -> str:
+        """Build the prompt for job extraction."""
         job_position = context.get("job_position", "")
         job_keywords = context.get("job_keywords", "")
         job_postings = context.get("job_postings", "")
         raw_job_data = context.get("raw_job_data", [])
         
-        # Check if we have structured JSearch data
         if raw_job_data and isinstance(raw_job_data, list):
-            return self._process_jsearch_data(raw_job_data, job_position, job_keywords, orchestrator)
+            return self._build_jsearch_prompt(raw_job_data, job_position, job_keywords)
         else:
-            return self._process_text_data(job_postings, job_position, job_keywords, orchestrator)
-    
-    def _process_jsearch_data(self, jobs: list, job_position: str, job_keywords: str, orchestrator) -> str:
-        """Process structured JSearch API data."""
+            return self._build_text_prompt(job_postings, job_position, job_keywords)
+
+    def _build_jsearch_prompt(self, jobs: list, job_position: str, job_keywords: str) -> str:
         if not jobs:
             return "No job postings found from JSearch API."
-        
+            
         # Create summary of JSearch jobs for agent analysis
         job_summaries = []
         for i, job in enumerate(jobs, 1):
@@ -228,7 +217,7 @@ Salary: {f"${job['salary_min']:,} - ${job['salary_max']:,} {job['salary_currency
         
         keywords_text = job_keywords if job_keywords and job_keywords.strip() and job_keywords != "No specific skills filter" else "No specific ranking keywords (all jobs included based on position relevance only)"
         
-        prompt = f"""You are analyzing {len(jobs)} real job postings from JSearch API (LinkedIn, Indeed, Monster, etc.).
+        return f"""You are analyzing {len(jobs)} real job postings from JSearch API (LinkedIn, Indeed, Monster, etc.).
 
 **Target Positions:** {job_position}
 **Keywords for Ranking:** {keywords_text}
@@ -262,15 +251,11 @@ Salary: {f"${job['salary_min']:,} - ${job['salary_max']:,} {job['salary_currency
 - Jobs with ranking keywords: [Y]
 - Most common job types: [List]
 """
-        
-        return orchestrator.query_llm(prompt)
-    
-    def _process_text_data(self, job_postings: str, job_position: str, job_keywords: str, orchestrator) -> str:
-        """Process text-based job posting data (fallback mode)."""
-        
+
+    def _build_text_prompt(self, job_postings: str, job_position: str, job_keywords: str) -> str:
         keywords_text = job_keywords if job_keywords and job_keywords.strip() and job_keywords != "No specific skills filter" else "No ranking keywords (including all position-related jobs)"
         
-        prompt = f"""You are a job extraction system working with job posting text data.
+        return f"""You are a job extraction system working with job posting text data.
 
 **Target Job Positions:** {job_position}
 **Ranking Keywords:** {keywords_text}
@@ -304,8 +289,28 @@ Ranking Keywords Present: [List keywords found, or "None"]
 
 If no position-related jobs found, respond with: "No position-related jobs found."
 """
+
+    def execute(self, context: Dict[str, Any], orchestrator) -> str:
+        """
+        Extract and analyze job postings from JSearch API data.
         
+        Args:
+            context: Dictionary containing job_position, job_keywords, job_postings, and raw_job_data
+            orchestrator: Reference to the orchestrator for LLM queries
+            
+        Returns:
+            str: Analysis and filtering of job postings
+        """
+        prompt = self._build_prompt(context)
         return orchestrator.query_llm(prompt)
+    
+    def _process_jsearch_data(self, jobs: list, job_position: str, job_keywords: str, orchestrator) -> str:
+        """Deprecated: Use _build_jsearch_prompt instead."""
+        return orchestrator.query_llm(self._build_jsearch_prompt(jobs, job_position, job_keywords))
+    
+    def _process_text_data(self, job_postings: str, job_position: str, job_keywords: str, orchestrator) -> str:
+        """Deprecated: Use _build_text_prompt instead."""
+        return orchestrator.query_llm(self._build_text_prompt(job_postings, job_position, job_keywords))
     
 class JobRankingAndAnalysis(BaseAgent):
     """
@@ -319,17 +324,8 @@ class JobRankingAndAnalysis(BaseAgent):
             description="Ranks jobs based on best fit for user and creates detailed analysis with pros/cons and skills extraction"
         )
     
-    def execute(self, context: Dict[str, Any], orchestrator) -> str:
-        """
-        Analyze each job for best fit and provide detailed feedback.
-        
-        Args:
-            context: Dictionary containing job_position, job_keywords, resume, and filtered_jobs
-            orchestrator: Reference to the orchestrator for LLM queries
-            
-        Returns:
-            str: Comprehensive analysis results with rankings, summaries, pros/cons, and skills
-        """
+    def _build_prompt(self, context: Dict[str, Any]) -> str:
+        """Build the prompt for job ranking and analysis."""
         job_position = context.get("job_position", "")
         job_keywords = context.get("job_keywords", "")
         resume = context.get("resume", "")
@@ -339,11 +335,9 @@ class JobRankingAndAnalysis(BaseAgent):
         if not filtered_jobs or filtered_jobs == "No matching jobs found.":
             return "No jobs available for ranking and analysis. Please run job extraction first."
         
-        orchestrator._update_status("Analyzing job fit and relevance...")
-        
         keywords_text = job_keywords if job_keywords and job_keywords.strip() and job_keywords != "No specific skills filter" else "No ranking keywords provided (scoring based on position match only)"
         
-        prompt = f"""You are an expert career advisor and job matching specialist. Analyze ALL the provided job postings to rank them by best fit.
+        return f"""You are an expert career advisor and job matching specialist. Analyze ALL the provided job postings to rank them by best fit.
 
         **CANDIDATE PROFILE:**
         Target Position(s): {job_position}
@@ -404,7 +398,25 @@ class JobRankingAndAnalysis(BaseAgent):
         3. [Resume enhancement suggestions]
 
         Please ensure jobs are ranked from highest match score (best fit) to lowest match score (worst fit)."""
+
+    def execute(self, context: Dict[str, Any], orchestrator) -> str:
+        """
+        Analyze each job for best fit and provide detailed feedback.
         
+        Args:
+            context: Dictionary containing job_position, job_keywords, resume, and filtered_jobs
+            orchestrator: Reference to the orchestrator for LLM queries
+            
+        Returns:
+            str: Comprehensive analysis results with rankings, summaries, pros/cons, and skills
+        """
+        prompt = self._build_prompt(context)
+        
+        # Check if prompt indicates no jobs
+        if prompt.startswith("No jobs available"):
+            return prompt
+            
+        orchestrator._update_status("Analyzing job fit and relevance...")
         orchestrator._update_status("Generating job rankings and analysis...")
         result = orchestrator.query_llm(prompt)
         
@@ -505,22 +517,13 @@ class ResumeAndCoverLetter(BaseAgent):
             description="Modifying resume and creating cover letter to match each job listing"
         )
     
-    def execute(self, context: Dict[str, Any], orchestrator) -> str:
-        """
-       Modify resume to match job listing and create cover letter based on the resune that aligns with the job listing
-        
-        Args:
-            context: Dictionary containing list of ordered and filtered jobs from other agents, job_position, job_keywords, and resume
-            orchestrator: Reference to the orchestrator for LLM queries
-            
-        Returns:
-            str: a resume and cover letter for each position
-        """
+    def _build_prompt(self, context: Dict[str, Any]) -> str:
+        """Build the prompt for resume and cover letter generation."""
         job_position = context.get("job_position", "")
         job_keywords = context.get("job_keywords", "")
         resume = context.get("resume", "")
         
-        prompt = f"""You are a professional career advisor. Analyze the following:
+        return f"""You are a professional career advisor. Analyze the following:
 
             Job Position(s): {job_position}
             Required Keywords: {job_keywords}
@@ -533,7 +536,19 @@ class ResumeAndCoverLetter(BaseAgent):
             3. Missing skills or keywords that should be highlighted
             4. Suggestions for improving the resume for these positions
             """
+
+    def execute(self, context: Dict[str, Any], orchestrator) -> str:
+        """
+       Modify resume to match job listing and create cover letter based on the resune that aligns with the job listing
         
+        Args:
+            context: Dictionary containing list of ordered and filtered jobs from other agents, job_position, job_keywords, and resume
+            orchestrator: Reference to the orchestrator for LLM queries
+            
+        Returns:
+            str: a resume and cover letter for each position
+        """
+        prompt = self._build_prompt(context)
         return orchestrator.query_llm(prompt)
 
 
@@ -549,6 +564,27 @@ class SpreadsheetExportAgent(BaseAgent):
             description="Exports job analysis results to Excel/CSV format for testing and review"
         )
     
+    def _build_prompt(self, context: Dict[str, Any]) -> str:
+        """
+        Return a description of the export task for tracing purposes.
+        Since this agent doesn't use an LLM, this serves as the 'prompt' record.
+        """
+        job_position = context.get("job_position", "Unknown")
+        ranking_results = context.get("JobRankingAndAnalysisAgent_result", "No results found")
+        
+        return f"""PYTHON AGENT EXECUTION (No LLM Query)
+        
+Task: Export Job Analysis to Spreadsheet
+Target Position: {job_position}
+
+INPUT DATA (Job Rankings to Process):
+---------------------------------------------------
+{ranking_results[:2000]}... [truncated]
+---------------------------------------------------
+
+This agent parses the text above and converts it into an Excel file using pandas.
+"""
+
     def execute(self, context: Dict[str, Any], orchestrator) -> str:
         """
         Export job analysis results to a spreadsheet file.

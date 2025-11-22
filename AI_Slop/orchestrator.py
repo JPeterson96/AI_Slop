@@ -404,8 +404,9 @@ and suggest improvements."""
                     agent_name=agent_name,
                     job_position=context.get('job_position', ''),
                     keywords=context.get('job_keywords', ''),
-                    prompt_preview=str(prompt_preview)[:500],
-                    response_preview=str(result)[:500],
+                    prompt_preview=str(prompt_preview),  # Store full prompt
+                    response_preview=str(result),        # Store full response
+                    content=str(prompt_preview),         # Also store full prompt in content field
                     success=success,
                     error_message=error_msg,
                     execution_time_ms=execution_time,

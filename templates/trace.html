@@ -170,39 +170,206 @@
             font-size: 12px;
         }
         
-        .trace-entry {
-            background: rgba(10, 25, 47, 0.8);
+        /* Card Styles */
+        .trace-card {
+            background: rgba(10, 25, 47, 0.6);
+            border: 1px solid rgba(65, 105, 225, 0.2);
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .trace-card:hover {
+            border-color: rgba(65, 105, 225, 0.5);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        
+        .trace-card.success {
+            border-left: 4px solid #00ff7f;
+        }
+        
+        .trace-card.error {
+            border-left: 4px solid #ff6b35;
+        }
+        
+        .card-header {
             padding: 15px;
-            margin-bottom: 10px;
-            border-radius: 6px;
-            border-left: 4px solid;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            background: rgba(10, 25, 47, 0.8);
+        }
+        
+        .card-header:hover {
+            background: rgba(65, 105, 225, 0.1);
+        }
+        
+        .card-title {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .agent-name {
+            font-weight: 700;
+            color: #ffffff;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+        
+        .timestamp {
             font-size: 12px;
+            color: #8892b0;
+            font-family: 'JetBrains Mono', monospace;
         }
         
-        .trace-entry.success {
-            border-left-color: #00ff7f;
+        .card-meta {
+            display: flex;
+            gap: 15px;
+            align-items: center;
         }
         
-        .trace-entry.error {
-            border-left-color: #ff6b35;
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
         }
         
-        .trace-header {
-            color: #4169e1;
-            font-weight: bold;
-            margin-bottom: 10px;
+        .status-success {
+            background: rgba(0, 255, 127, 0.1);
+            color: #00ff7f;
+        }
+        
+        .status-error {
+            background: rgba(255, 107, 53, 0.1);
+            color: #ff6b35;
+        }
+        
+        .expand-icon {
+            color: #00bfff;
+            transition: transform 0.3s ease;
+        }
+        
+        .trace-card.expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+        
+        .card-body {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-out;
+            background: rgba(0, 0, 0, 0.2);
+        }
+        
+        .trace-card.expanded .card-body {
+            max-height: 2000px; /* Large enough to fit content */
+            border-top: 1px solid rgba(65, 105, 225, 0.1);
+        }
+        
+        .card-content {
+            padding: 20px;
+        }
+        
+        .detail-row {
+            margin-bottom: 15px;
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 10px;
+        }
+        
+        .detail-label {
+            color: #8892b0;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .detail-value {
+            color: #ccd6f6;
             font-size: 14px;
         }
         
-        .trace-detail {
-            color: #8892b0;
-            margin: 5px 0;
+        .code-block {
+            background: #011627;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: #d6deeb;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            border: 1px solid rgba(65, 105, 225, 0.1);
+            margin-top: 5px;
+            max-height: 150px;
+            overflow-y: hidden;
+            position: relative;
+            transition: max-height 0.3s ease;
+        }
+        
+        .code-block.expanded {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .code-container {
+            position: relative;
+            margin-top: 5px;
+        }
+        
+        .show-more-btn {
+            display: block;
+            width: 100%;
+            padding: 8px;
+            background: rgba(65, 105, 225, 0.15);
+            border: 1px solid rgba(65, 105, 225, 0.2);
+            border-top: none;
+            color: #00bfff;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            cursor: pointer;
+            border-radius: 0 0 6px 6px;
+            transition: all 0.2s ease;
+        }
+        
+        .show-more-btn:hover {
+            background: rgba(65, 105, 225, 0.25);
+            color: #ffffff;
+        }
+
+        .prompt-block {
+            border-left: 3px solid #4169e1;
+        }
+        
+        .response-block {
+            border-left: 3px solid #00ff7f;
+        }
+        
+        .section-title {
+            color: #00bfff;
+            font-size: 14px;
+            font-weight: 600;
+            margin: 20px 0 10px 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .section-title::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: rgba(65, 105, 225, 0.2);
+            margin-left: 10px;
         }
         
         .loading {
             text-align: center;
             color: #00bfff;
             font-size: 16px;
+            padding: 40px;
         }
         
         .error-message {
@@ -213,123 +380,31 @@
             margin: 10px 0;
         }
         
-        .debug-info {
-            background: rgba(100, 100, 100, 0.1);
-            padding: 10px;
-            border-radius: 4px;
-            font-size: 11px;
-            color: #8892b0;
-            margin-bottom: 20px;
-        }
-        
-        .collapsible {
-            background: rgba(65, 105, 225, 0.2);
-            color: #ccd6f6;
-            cursor: pointer;
-            padding: 8px;
-            margin: 5px 0;
-            border: none;
-            text-align: left;
-            outline: none;
-            font-size: 11px;
-            border-radius: 4px;
-            font-family: 'JetBrains Mono', monospace;
-            width: 100%;
-            transition: background-color 0.3s;
-        }
-        
-        .collapsible:hover {
-            background: rgba(65, 105, 225, 0.3);
-        }
-        
-        .collapsible.active {
-            background: rgba(65, 105, 225, 0.4);
-        }
-        
-        .collapsible:after {
-            content: '▼';
-            color: #00ff7f;
-            font-weight: bold;
-            float: right;
-            margin-left: 5px;
-        }
-        
-        .collapsible.active:after {
-            content: '▲';
-        }
-        
-        .content {
-            padding: 0 8px;
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 4px;
-            margin: 5px 0;
-        }
-        
-        .content.active {
-            max-height: 300px;
-            padding: 10px 8px;
-            overflow-y: auto;
-        }
-        
-        .prompt-content, .response-content {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 10px;
-            color: #8892b0;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            line-height: 1.4;
-        }
-        
-        .prompt-content {
-            border-left: 3px solid #4169e1;
-            padding-left: 8px;
-        }
-        
-        .response-content {
-            border-left: 3px solid #00ff7f;
-            padding-left: 8px;
-        }
-        
-        /* Terminal-style scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        ::-webkit-scrollbar-track {
-            background: rgba(16, 16, 24, 0.5);
-        }
-        
-        ::-webkit-scrollbar-thumb {
-            background: rgba(65, 105, 225, 0.4);
-            border-radius: 4px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(65, 105, 225, 0.6);
-        }
-        
         /* Responsive adjustments */
         @media (max-width: 768px) {
             .trace-container {
                 margin: 10px;
-                padding: 25px;
+                padding: 15px;
             }
             
             .header h1 {
                 font-size: 24px;
             }
             
-            .stats {
+            .detail-row {
                 grid-template-columns: 1fr;
+                gap: 5px;
             }
             
-            .refresh-btn {
-                padding: 10px 16px;
-                font-size: 12px;
-                margin: 5px 3px;
+            .card-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            
+            .card-meta {
+                width: 100%;
+                justify-content: space-between;
             }
         }
     </style>
@@ -375,10 +450,6 @@
                 
                 if (data.error) {
                     traceDiv.innerHTML = `<div class="error-message">Error: ${data.error}</div>`;
-                    
-                    if (data.debug_info) {
-                        traceDiv.innerHTML += `<div class="debug-info">Debug Info: ${JSON.stringify(data.debug_info, null, 2)}</div>`;
-                    }
                 } else {
                     // Update stats
                     if (data.metrics) {
@@ -389,55 +460,85 @@
                     }
                     
                     // Show traces
-                    let html = `<h3>Recent Traces (${data.traces ? data.traces.length : 0} entries)</h3>`;
-                    
-                    if (data.debug_info) {
-                        html += `<div class="debug-info">Using: ${data.debug_info.model_used || 'Unknown'}</div>`;
-                    }
+                    let html = `<h3>Recent Traces (${data.traces ? data.traces.length : 0} entries)</h3><br>`;
                     
                     if (data.traces && data.traces.length > 0) {
                         data.traces.forEach((trace, index) => {
-                            const entryClass = trace.status === 'success' || trace.status === true ? 'success' : 'error';
-                            const promptId = `prompt-${index}`;
-                            const responseId = `response-${index}`;
+                            const statusClass = trace.status === 'success' || trace.status === true ? 'success' : 'error';
+                            const statusText = trace.status === 'success' || trace.status === true ? 'SUCCESS' : 'ERROR';
+                            const cardId = `card-${index}`;
                             
                             html += `
-                                <div class="trace-entry ${entryClass}">
-                                    <div class="trace-header">
-                                        ${trace.agent_name} - ${new Date(trace.timestamp).toLocaleString()}
+                                <div class="trace-card ${statusClass}" id="${cardId}">
+                                    <div class="card-header" onclick="toggleCard('${cardId}')">
+                                        <div class="card-title">
+                                            <div class="agent-name">${trace.agent_name}</div>
+                                            <div class="timestamp">${new Date(trace.timestamp).toLocaleString()}</div>
+                                        </div>
+                                        <div class="card-meta">
+                                            <span class="status-badge status-${statusClass}">${statusText}</span>
+                                            <span style="color: #8892b0; font-size: 12px;">${trace.execution_time_ms}ms</span>
+                                            <div class="expand-icon">▼</div>
+                                        </div>
                                     </div>
-                                    <div class="trace-detail"><strong>Session:</strong> ${trace.session_id}</div>
-                                    <div class="trace-detail"><strong>Job:</strong> ${trace.job_position}</div>
-                                    <div class="trace-detail"><strong>Keywords:</strong> ${trace.keywords}</div>
-                                    <div class="trace-detail"><strong>Execution Time:</strong> ${trace.execution_time_ms}ms</div>
-                                    <div class="trace-detail"><strong>Provider:</strong> ${trace.llm_provider}</div>
-                                    ${trace.error_message ? `<div class="trace-detail" style="color: #ff6b35;"><strong>Error:</strong> ${trace.error_message}</div>` : ''}
                                     
-                                    ${trace.prompt_preview ? `
-                                        <button class="collapsible" onclick="toggleContent('${promptId}')">
-                                            📝 View Prompt (${trace.prompt_preview.length} chars)
-                                        </button>
-                                        <div id="${promptId}" class="content">
-                                            <div class="prompt-content">${trace.prompt_preview}</div>
+                                    <div class="card-body">
+                                        <div class="card-content">
+                                            <div class="detail-row">
+                                                <div class="detail-label">Model Used</div>
+                                                <div class="detail-value">${trace.llm_provider}</div>
+                                            </div>
+                                            
+                                            <div class="detail-row">
+                                                <div class="detail-label">Session ID</div>
+                                                <div class="detail-value">${trace.session_id}</div>
+                                            </div>
+                                            
+                                            ${trace.job_position ? `
+                                            <div class="detail-row">
+                                                <div class="detail-label">Job Position</div>
+                                                <div class="detail-value">${trace.job_position}</div>
+                                            </div>` : ''}
+                                            
+                                            ${trace.error_message ? `
+                                            <div class="detail-row">
+                                                <div class="detail-label" style="color: #ff6b35;">Error</div>
+                                                <div class="detail-value" style="color: #ff6b35;">${trace.error_message}</div>
+                                            </div>` : ''}
+                                            
+                                            <div class="section-title">Prompt</div>
+                                            <div class="code-container">
+                                                <div class="code-block prompt-block" id="prompt-${index}">${trace.prompt_preview || 'No prompt data available'}</div>
+                                                ${(trace.prompt_preview && trace.prompt_preview.length > 300) ? 
+                                                    `<button class="show-more-btn" onclick="toggleCode('prompt-${index}', this)">Show Full Prompt (${trace.prompt_preview.length} chars)</button>` : ''}
+                                            </div>
+                                            
+                                            <div class="section-title">Output</div>
+                                            <div class="code-container">
+                                                <div class="code-block response-block" id="response-${index}">${trace.response_preview || 'No response data available'}</div>
+                                                ${(trace.response_preview && trace.response_preview.length > 300) ? 
+                                                    `<button class="show-more-btn" onclick="toggleCode('response-${index}', this)">Show Full Output (${trace.response_preview.length} chars)</button>` : ''}
+                                            </div>
                                         </div>
-                                    ` : ''}
-                                    
-                                    ${trace.response_preview ? `
-                                        <button class="collapsible" onclick="toggleContent('${responseId}')">
-                                            🤖 View Response (${trace.response_preview.length} chars)
-                                        </button>
-                                        <div id="${responseId}" class="content">
-                                            <div class="response-content">${trace.response_preview}</div>
-                                        </div>
-                                    ` : ''}
+                                    </div>
                                 </div>
                             `;
                         });
                     } else {
-                        html += '<div class="trace-entry"><div class="trace-detail">No traces found. Execute a job search to see traces here.</div></div>';
+                        html += '<div class="trace-card"><div class="card-content" style="text-align: center; color: #8892b0;">No traces found. Execute a job search to see traces here.</div></div>';
                     }
                     
+                    // Preserve expanded state if refreshing
+                    const expandedCards = document.querySelectorAll('.trace-card.expanded');
+                    const expandedIds = Array.from(expandedCards).map(card => card.id);
+                    
                     traceDiv.innerHTML = html;
+                    
+                    // Restore expanded state
+                    expandedIds.forEach(id => {
+                        const card = document.getElementById(id);
+                        if (card) card.classList.add('expanded');
+                    });
                 }
                 
             } catch (error) {
@@ -457,17 +558,25 @@
             }
         }
         
-        // Toggle collapsible content
-        function toggleContent(contentId) {
-            const content = document.getElementById(contentId);
-            const button = content.previousElementSibling;
+        function toggleCard(cardId) {
+            const card = document.getElementById(cardId);
+            // Only toggle if we didn't click a button or code block
+            if (!event.target.closest('.show-more-btn') && !event.target.closest('.code-block')) {
+                card.classList.toggle('expanded');
+            }
+        }
+        
+        function toggleCode(elementId, btn) {
+            event.stopPropagation(); // Prevent card toggle
+            const block = document.getElementById(elementId);
+            block.classList.toggle('expanded');
             
-            if (content.classList.contains('active')) {
-                content.classList.remove('active');
-                button.classList.remove('active');
+            if (block.classList.contains('expanded')) {
+                btn.textContent = 'Show Less';
             } else {
-                content.classList.add('active');
-                button.classList.add('active');
+                const type = elementId.includes('prompt') ? 'Prompt' : 'Output';
+                const length = block.textContent.length;
+                btn.textContent = `Show Full ${type} (${length} chars)`;
             }
         }
         
