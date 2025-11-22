@@ -261,7 +261,7 @@ Salary: {f"${job['salary_min']:,} - ${job['salary_max']:,} {job['salary_currency
 **Ranking Keywords:** {keywords_text}
 
 **Job Postings Data:**
-{job_postings[:5000]}
+{job_postings[:25000]}
 
 **Instructions:**
 1. Review each job posting in the data above
@@ -339,19 +339,33 @@ class JobRankingAndAnalysis(BaseAgent):
         
         return f"""You are an expert career advisor and job matching specialist. Analyze ALL the provided job postings to rank them by best fit.
 
-        **CANDIDATE PROFILE:**
+        =================================================================
+        SECTION 1: CANDIDATE PROFILE (DO NOT EXTRACT JOBS FROM THIS SECTION)
+        =================================================================
         Target Position(s): {job_position}
         Ranking Keywords (for scoring): {keywords_text}
-        Resume Content: {resume[:3000]}
+        
+        RESUME CONTENT (For matching purposes ONLY - NOT job listings):
+        ---------------------------------------------------
+        {resume[:3000]}
+        ---------------------------------------------------
 
-        **ALL AVAILABLE JOB POSTINGS:**
-        {filtered_jobs[:4000]}
+        =================================================================
+        SECTION 2: AVAILABLE JOB POSTINGS (ONLY EXTRACT JOBS FROM HERE)
+        =================================================================
+        {filtered_jobs[:30000]}
+        =================================================================
 
         **RANKING INSTRUCTIONS:**
-        - Include ALL jobs in your analysis and ranking
-        - Use the ranking keywords to boost scores for jobs that mention them
-        - Jobs without keywords can still rank highly if they match positions well
-        - Rank from best fit to worst fit based on position relevance + keyword presence
+        - CRITICAL: Do NOT treat the candidate's past experience, projects, or resume details as job postings.
+        - ONLY analyze and rank the jobs listed in SECTION 2 above.
+        - Include ALL jobs from SECTION 2 in your analysis and ranking.
+        - If a job is listed in SECTION 2, you MUST analyze it.
+        - Do NOT invent or hallucinate jobs that are not in SECTION 2.
+        - Do NOT output placeholders like "(No job posting available)" - only output valid analysis for real jobs.
+        - Use the ranking keywords to boost scores for jobs that mention them.
+        - Jobs without keywords can still rank highly if they match positions well.
+        - Rank from best fit to worst fit based on position relevance + keyword presence.
 
         **REQUIRED OUTPUT FORMAT:**
 
@@ -627,6 +641,11 @@ This agent parses the text above and converts it into an Excel file using pandas
             try:
                 jobs_data = self._parse_job_rankings(ranking_results, raw_job_data)
                 print(f"[DEBUG] Parsed {len(jobs_data)} jobs")
+                
+                # Store parsed jobs in orchestrator context for UI display
+                if hasattr(orchestrator, 'context'):
+                    orchestrator.context["parsed_jobs_data"] = jobs_data
+                    
             except Exception as e:
                 print(f"[DEBUG] Job parsing failed: {e}")
                 jobs_data = []

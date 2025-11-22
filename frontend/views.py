@@ -124,43 +124,56 @@ def submit_text(request):
             
             # Try to get job data from orchestrator context
             try:
-                raw_job_data = orchestrator.context.get("raw_job_data", [])
-                if raw_job_data and isinstance(raw_job_data, list):
-                    # Use first 5 jobs from the raw data
-                    for i, job in enumerate(raw_job_data[:5]):
-                        if isinstance(job, dict):
-                            top_jobs.append({
-                                "title": job.get("title", f"Job Position {i+1}"),
-                                "company": job.get("company", "Company Name"),
-                                "score": f"{8-i}"  # Mock score, decreasing from 8
-                            })
-                        else:
-                            # Fallback for non-dict job data
-                            top_jobs.append({
-                                "title": str(job)[:50] if job else f"Position {i+1}",
-                                "company": "Various",
-                                "score": f"{8-i}"
-                            })
+                # First try to get the parsed data from the spreadsheet agent (most accurate)
+                parsed_jobs = orchestrator.context.get("parsed_jobs_data", [])
+                
+                if parsed_jobs:
+                    job_count = len(parsed_jobs)
+                    for job in parsed_jobs[:5]:
+                        top_jobs.append({
+                            "title": job.get("Job Title", "Unknown Position"),
+                            "company": job.get("Company", "Unknown Company"),
+                            "score": str(job.get("Match Score", 0))
+                        })
                 else:
-                    # Extract from text if raw data not available
-                    if workflow_stages.get("job_ranking"):
-                        ranking_text = workflow_stages["job_ranking"]
-                        lines = ranking_text.split('\n')
-                        job_counter = 0
-                        
-                        for line in lines:
-                            if job_counter >= 5:
-                                break
-                            if any(keyword in line.lower() for keyword in ['job #', 'position:', 'title:']):
-                                if ':' in line:
-                                    title = line.split(':', 1)[1].strip()
-                                    if title and len(title) > 5:
-                                        top_jobs.append({
-                                            "title": title[:60],
-                                            "company": "Company Name",
-                                            "score": f"{8-job_counter}"
-                                        })
-                                        job_counter += 1
+                    # Fallback to raw job data if parsed data not available
+                    raw_job_data = orchestrator.context.get("raw_job_data", [])
+                    if raw_job_data and isinstance(raw_job_data, list):
+                        # Use first 5 jobs from the raw data
+                        for i, job in enumerate(raw_job_data[:5]):
+                            if isinstance(job, dict):
+                                top_jobs.append({
+                                    "title": job.get("title", f"Job Position {i+1}"),
+                                    "company": job.get("company", "Company Name"),
+                                    "score": f"{8-i}"  # Mock score, decreasing from 8
+                                })
+                            else:
+                                # Fallback for non-dict job data
+                                top_jobs.append({
+                                    "title": str(job)[:50] if job else f"Position {i+1}",
+                                    "company": "Various",
+                                    "score": f"{8-i}"
+                                })
+                    else:
+                        # Extract from text if raw data not available
+                        if workflow_stages.get("job_ranking"):
+                            ranking_text = workflow_stages["job_ranking"]
+                            lines = ranking_text.split('\n')
+                            job_counter = 0
+                            
+                            for line in lines:
+                                if job_counter >= 5:
+                                    break
+                                if any(keyword in line.lower() for keyword in ['job #', 'position:', 'title:']):
+                                    if ':' in line:
+                                        title = line.split(':', 1)[1].strip()
+                                        if title and len(title) > 5:
+                                            top_jobs.append({
+                                                "title": title[:60],
+                                                "company": "Company Name",
+                                                "score": f"{8-job_counter}"
+                                            })
+                                            job_counter += 1
                     
             except Exception as e:
                 print(f"[DEBUG] Job extraction error: {e}")
