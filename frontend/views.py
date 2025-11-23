@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from AI_Slop.ollama_client import query_ollama
 from AI_Slop.orchestrator import Orchestrator
 from AI_Slop.agents import ExtractJobPostingInfo, JobRankingAndAnalysis, SpreadsheetExportAgent
@@ -8,10 +8,16 @@ import PyPDF2
 import docx
 import io
 import os
+import json
+import time
+import re
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv('auth.env')
+
+# Global workflow status tracker for real-time updates
+workflow_status = {}
 
 
 def index(request):
@@ -64,7 +70,14 @@ def submit_text(request):
     Handle job application submission with position, keywords, and resume.
     Uses the orchestrator and agents to process the data.
     """
+    # Add debug logging to track duplicate calls
+    import time
+    request_id = f"{int(time.time() * 1000)}"
+    print(f"\n[REQUEST {request_id}] submit_text called")
+    print(f"[REQUEST {request_id}] Method: {request.method}")
+    
     if request.method == 'POST':
+        print(f"[REQUEST {request_id}] Processing POST request")
         job_position = request.POST.get('job_position', '')
         job_keywords = request.POST.get('job_keywords', '')
         resume_file = request.FILES.get('resume')
@@ -81,8 +94,19 @@ def submit_text(request):
             resume_content = extract_text_from_file(resume_file)
             
             # Initialize orchestrator and agents following architecture diagram
-            model = os.getenv('OLLAMA_MODEL', 'llama3')
-            orchestrator = Orchestrator(model=model)
+            orchestrator = Orchestrator()
+            
+            # Setup status tracking for real-time updates
+            workflow_status[request_id] = {'status': 'Starting...', 'progress': 0}
+            
+            original_update = orchestrator._update_status
+            def tracked_update(status):
+                workflow_status[request_id] = {'status': status, 'progress': 0}
+                print(f"[STATUS UPDATE] {status}", flush=True)
+                if original_update:
+                    return original_update(status)
+            
+            orchestrator._update_status = tracked_update
             
             # Register agents per workflow: ExtractJobPostingInfo -> JobRankingAndAnalysis -> SpreadsheetExportAgent
             from AI_Slop.agents import ExtractJobPostingInfo, JobRankingAndAnalysis, SpreadsheetExportAgent
@@ -96,6 +120,7 @@ def submit_text(request):
             orchestrator.register_agent(export_agent)
             
             # Execute workflow
+            print(f"[REQUEST {request_id}] Starting orchestrator workflow...")
             job_data = {
                 "job_position": job_position,
                 "job_keywords": job_keywords if job_keywords.strip() else "No specific skills filter",
@@ -127,13 +152,21 @@ def submit_text(request):
                 # First try to get the parsed data from the spreadsheet agent (most accurate)
                 parsed_jobs = orchestrator.context.get("parsed_jobs_data", [])
                 
+                print(f"[DEBUG] Parsed jobs count: {len(parsed_jobs)}", flush=True)
+                
                 if parsed_jobs:
                     job_count = len(parsed_jobs)
-                    for job in parsed_jobs[:5]:
+                    for idx, job in enumerate(parsed_jobs[:5]):
+                        score = job.get("Match Score", 0)
+                        print(f"[DEBUG] Top job {idx+1}: {job.get('Job Title')} - Score: {score} (type: {type(score).__name__})", flush=True)
+                        
+                        # Ensure score is a string representation of the integer
+                        score_str = str(score) if isinstance(score, int) else str(score) if score else "0"
+                        
                         top_jobs.append({
                             "title": job.get("Job Title", "Unknown Position"),
                             "company": job.get("Company", "Unknown Company"),
-                            "score": str(job.get("Match Score", 0))
+                            "score": score_str
                         })
                 else:
                     # Fallback to raw job data if parsed data not available
@@ -193,6 +226,21 @@ def submit_text(request):
                         "score": "0"
                     }]
             
+            # Extract spreadsheet path from export result
+            spreadsheet_path = None
+            spreadsheet_export = workflow_stages.get("spreadsheet_export", "")
+            if "File Created:" in spreadsheet_export:
+                match = re.search(r'File Created:\*\* (.+\.xlsx)', spreadsheet_export)
+                if match:
+                    filename = match.group(1)
+                    spreadsheet_path = f"/exports/{filename}"
+            
+            print(f"[REQUEST {request_id}] Workflow complete, returning response", flush=True)
+            
+            # Clear status tracker
+            if request_id in workflow_status:
+                del workflow_status[request_id]
+            
             return JsonResponse({
                 'status': 'success',
                 'message': 'Job application analyzed successfully',
@@ -200,14 +248,22 @@ def submit_text(request):
                 'job_keywords': job_keywords,
                 'response': agent_response,
                 'job_count': job_count,
-                'top_jobs': top_jobs[:5]  # Ensure max 5 jobs
+                'top_jobs': top_jobs[:5],  # Ensure max 5 jobs
+                'spreadsheet_path': spreadsheet_path,
+                'request_id': request_id
             })
             
         except Exception as e:
+            print(f"[REQUEST {request_id}] Error: {str(e)}", flush=True)
+            
+            # Clear status tracker
+            if request_id in workflow_status:
+                del workflow_status[request_id]
+            
             return JsonResponse({
                 'status': 'error',
                 'message': f'Error: {str(e)}',
-                'hint': 'Make sure GROQ_API_KEY is set in environment variables. Get your free key from https://console.groq.com/'
+                'hint': 'Check your LLM provider configuration. For Ollama: ensure "ollama serve" is running. For Groq: set GROQ_API_KEY in auth.env'
             }, status=500)
     
     return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
@@ -221,6 +277,36 @@ def ai_response(request):
 def trace_dashboard(request):
     """Render the trace visualization dashboard."""
     return render(request, 'trace.html')
+
+
+def workflow_status_stream(request):
+    """Stream real-time workflow status updates using Server-Sent Events."""
+    request_id = request.GET.get('request_id')
+    
+    def event_stream():
+        """Generator that yields status updates."""
+        max_iterations = 600  # 5 minutes max (600 * 0.5s)
+        iteration = 0
+        
+        while iteration < max_iterations:
+            if request_id in workflow_status:
+                status_data = workflow_status[request_id]
+                yield f"data: {json.dumps(status_data)}\n\n"
+            else:
+                # Workflow completed or doesn't exist
+                yield f"data: {json.dumps({'status': 'complete', 'progress': 100})}\n\n"
+                break
+            
+            time.sleep(0.5)  # Check every 500ms
+            iteration += 1
+    
+    response = StreamingHttpResponse(
+        event_stream(),
+        content_type='text/event-stream'
+    )
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
 
 
 def trace_api(request):

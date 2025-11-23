@@ -539,8 +539,23 @@
         const viewSpreadsheetBtn = document.getElementById('viewSpreadsheetBtn');
         const viewTraceBtn = document.getElementById('viewTraceBtn');
         
+        // Flag to prevent duplicate submissions
+        let isSubmitting = false;
+        let statusEventSource = null;
+        
+        console.log('[DEBUG] Attaching form submit handler');
+        
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+            
+            // Prevent duplicate submissions
+            if (isSubmitting) {
+                console.log('[DEBUG] Already processing a submission, ignoring duplicate request');
+                return;
+            }
+            
+            console.log('[DEBUG] Starting new submission');
+            isSubmitting = true;
             
             const jobPosition = document.getElementById('jobPosition').value.trim();
             const jobKeywords = document.getElementById('jobKeywords').value.trim();
@@ -548,21 +563,50 @@
             
             if (!jobPosition || !resumeFile) {
                 showMessage('ERROR: Missing required input parameters (position and resume)', 'error', false);
+                isSubmitting = false;
                 return;
             }
             
             submitBtn.disabled = true;
-            currentStatusIndex = 0;
-            
-            // Start cycling through status messages
-            submitBtn.textContent = statusMessages[0];
-            statusInterval = setInterval(cycleStatusMessages, 2000); // Change every 2 seconds
+            submitBtn.textContent = 'INITIALIZING...';
             
             resultsDisplay.classList.remove('show');
             
             try {
                 const formData = new FormData(form);
                 
+                // Generate request_id upfront (matches backend timestamp generation)
+                const requestId = Date.now().toString();
+                console.log('[DEBUG] Generated request_id:', requestId);
+                
+                // Start status stream BEFORE submitting (backend will create status entry immediately)
+                statusEventSource = new EventSource(`/workflow-status/?request_id=${requestId}`);
+                
+                statusEventSource.onmessage = function(event) {
+                    const statusData = JSON.parse(event.data);
+                    console.log('[DEBUG] Status update:', statusData.status);
+                    const statusText = statusData.status.toUpperCase().replace(/ /g, '_').replace(/\./g, '').substring(0, 30);
+                    submitBtn.textContent = statusText;
+                    
+                    if (statusData.status === 'complete') {
+                        console.log('[DEBUG] Status stream complete');
+                        statusEventSource.close();
+                        statusEventSource = null;
+                    }
+                };
+                
+                statusEventSource.onerror = function(err) {
+                    console.log('[DEBUG] Status stream error or closed');
+                    if (statusEventSource) {
+                        statusEventSource.close();
+                        statusEventSource = null;
+                    }
+                };
+                
+                // Small delay to ensure EventSource connects
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Now submit the form
                 const response = await fetch('/submit/', {
                     method: 'POST',
                     body: formData
@@ -570,40 +614,40 @@
                 
                 const data = await response.json();
                 
-                // Clear the status interval
-                clearInterval(statusInterval);
-                
                 if (data.status === 'success') {
-                    // Display job count and top jobs
-                    jobCount.textContent = `${data.job_count || 0} jobs analyzed`;
-                    
-                    // Clear and populate top jobs list
-                    topJobsList.innerHTML = '';
-                    if (data.top_jobs && data.top_jobs.length > 0) {
-                        data.top_jobs.slice(0, 5).forEach((job, index) => {
-                            const li = document.createElement('li');
-                            li.innerHTML = `
-                                <span class="job-title">${index + 1}. ${job.title}</span>
-                                <span class="job-company">@ ${job.company}</span>
-                                <span class="job-score">${job.score}/10</span>
-                            `;
-                            topJobsList.appendChild(li);
-                        });
+                    // Check if we have valid job data
+                    if (data.job_count && data.job_count > 0) {
+                        // Display job count and top jobs
+                        jobCount.textContent = `${data.job_count} jobs analyzed`;
+                        
+                        // Clear and populate top jobs list
+                        topJobsList.innerHTML = '';
+                        if (data.top_jobs && data.top_jobs.length > 0) {
+                            data.top_jobs.slice(0, 5).forEach((job, index) => {
+                                const li = document.createElement('li');
+                                li.innerHTML = `
+                                    <span class="job-title">${index + 1}. ${job.title}</span>
+                                    <span class="job-company">@ ${job.company}</span>
+                                    <span class="job-score">${job.score}/10</span>
+                                `;
+                                topJobsList.appendChild(li);
+                            });
+                        }
+                        
+                        resultsDisplay.classList.add('show');
+                        showMessage('ANALYSIS_COMPLETE: Spreadsheet generated successfully', 'success', false);
+                        submitBtn.textContent = 'ANALYSIS_COMPLETE';
+                        
+                        // Store spreadsheet path for download
+                        if (data.spreadsheet_path) {
+                            viewSpreadsheetBtn.onclick = () => {
+                                window.open(data.spreadsheet_path, '_blank');
+                            };
+                        }
                     } else {
-                        const li = document.createElement('li');
-                        li.textContent = 'No jobs found';
-                        topJobsList.appendChild(li);
-                    }
-                    
-                    resultsDisplay.classList.add('show');
-                    showMessage('ANALYSIS_COMPLETE: Spreadsheet generated successfully', 'success', false);
-                    submitBtn.textContent = 'ANALYSIS_COMPLETE';
-                    
-                    // Store spreadsheet path for download
-                    if (data.spreadsheet_path) {
-                        viewSpreadsheetBtn.onclick = () => {
-                            window.open(data.spreadsheet_path, '_blank');
-                        };
+                        // No jobs found or error during processing
+                        showMessage('WARNING: No jobs found to analyze. Try different search criteria or check API rate limits.', 'error', false);
+                        submitBtn.textContent = 'NO_RESULTS_FOUND';
                     }
                 } else {
                     showMessage(`ERROR: ${data.message || 'System malfunction detected'}`, 'error', false);
@@ -613,11 +657,17 @@
                     submitBtn.textContent = 'EXECUTE_ANALYSIS';
                 }
             } catch (error) {
-                clearInterval(statusInterval);
+                console.error('[DEBUG] Submission error:', error);
+                if (statusEventSource) {
+                    statusEventSource.close();
+                    statusEventSource = null;
+                }
                 showMessage('NETWORK_ERROR: Connection failed. Retry protocol initiated.', 'error', false);
                 submitBtn.textContent = 'EXECUTE_ANALYSIS';
             } finally {
+                console.log('[DEBUG] Submission complete, re-enabling form');
                 submitBtn.disabled = false;
+                isSubmitting = false;
             }
         });
         

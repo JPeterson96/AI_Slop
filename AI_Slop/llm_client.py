@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
 
-load_dotenv()
+load_dotenv('auth.env')
 
 class UnifiedLLMClient:
     """
@@ -56,8 +56,9 @@ class UnifiedLLMClient:
             api_key=api_key,
             model=model,
             temperature=0.7,
-            max_tokens=4000,
-            timeout=60
+            max_tokens=20000,
+            timeout=300,
+            max_retries=0
         )
     
     def _initialize_ollama(self):

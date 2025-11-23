@@ -640,22 +640,29 @@ This agent parses the text above and converts it into an Excel file using pandas
             # Parse job rankings from the analysis text
             try:
                 jobs_data = self._parse_job_rankings(ranking_results, raw_job_data)
-                print(f"[DEBUG] Parsed {len(jobs_data)} jobs")
+                print(f"[DEBUG] Parsed {len(jobs_data)} jobs", flush=True)
                 
                 # Store parsed jobs in orchestrator context for UI display
                 if hasattr(orchestrator, 'context'):
                     orchestrator.context["parsed_jobs_data"] = jobs_data
                     
             except Exception as e:
-                print(f"[DEBUG] Job parsing failed: {e}")
+                print(f"[DEBUG] Job parsing failed: {e}", flush=True)
                 jobs_data = []
+            
+            # Check if we have any jobs to export
+            if not jobs_data or len(jobs_data) == 0:
+                error_msg = "No jobs found to export. Skipping spreadsheet creation."
+                print(f"[DEBUG] {error_msg}", flush=True)
+                orchestrator._update_status(error_msg)
+                return f"ERROR: {error_msg}\n\nPlease check the job analysis results or try different search criteria."
             
             # Parse skills data
             try:
                 skills_data = self._parse_skills_data(ranking_results)
-                print(f"[DEBUG] Parsed {len(skills_data)} skills")
+                print(f"[DEBUG] Parsed {len(skills_data)} skills", flush=True)
             except Exception as e:
-                print(f"[DEBUG] Skills parsing failed: {e}")
+                print(f"[DEBUG] Skills parsing failed: {e}", flush=True)
                 skills_data = []
             
             # Create timestamp for file naming
@@ -838,9 +845,21 @@ The spreadsheet is ready for review and can be opened in Excel, Google Sheets, o
                         job_title = first_line[:50] if len(first_line) > 50 else first_line
                         company = "Unknown Company"
                     
-                    # Extract match score
+                    # Extract match score - try multiple patterns
                     score_match = re.search(r'\*\*Match Score:\s*(\d+)/10\*\*', section)
+                    if not score_match:
+                        # Try alternative pattern without double asterisks
+                        score_match = re.search(r'Match Score:\s*(\d+)/10', section)
+                    if not score_match:
+                        # Try with colon variations
+                        score_match = re.search(r'Score\s*:\s*(\d+)/10', section, re.IGNORECASE)
+                    if not score_match:
+                        # Try to find any number followed by /10
+                        score_match = re.search(r'(\d+)/10', section)
+                    
                     match_score = int(score_match.group(1)) if score_match else 0
+                    
+                    print(f"[DEBUG] Parsed job {i}: {job_title} with score {match_score}/10", flush=True)
                     
                     # Extract summary
                     summary_match = re.search(r'\*\*Summary:\*\*\s*([^\n]+)', section)

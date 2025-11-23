@@ -12,8 +12,8 @@ import time
 import logging
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from auth.env file
+load_dotenv('auth.env')
 
 
 class JSearchClient:
